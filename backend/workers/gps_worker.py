@@ -31,7 +31,7 @@ def detect_country_from_gps(lat, lon):
 class GPSWorker:
     INTERVAL = 1
     NMEA_PORTS = ['/dev/ttyUSB0', '/dev/ttyUSB1', '/dev/ttyACM0', '/dev/ttyACM1']
-    UART_PORTS = ['/dev/serial0', '/dev/ttyAMA0']
+    UART_PORTS = []  # Disabled - use USB GPS only
 
     def __init__(self, gps_module: GPSModule):
         self.gps = gps_module
