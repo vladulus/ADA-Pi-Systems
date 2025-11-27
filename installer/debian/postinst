@@ -1,0 +1,45 @@
+#!/bin/bash
+set -e
+
+echo "=== ADA-Pi-System Post-Install Script ==="
+
+INSTALL_DIR="/usr/local/ada-pi-system"
+SYSTEMD_DIR="/etc/systemd/system"
+
+echo "Creating install directory..."
+mkdir -p $INSTALL_DIR
+
+echo "Copying backend..."
+cp -r /usr/share/ada-pi-system/backend/* $INSTALL_DIR/backend/
+
+echo "Installing systemd services..."
+cp /usr/share/ada-pi-system/systemd/*.service $SYSTEMD_DIR/
+
+echo "Reloading systemd..."
+systemctl daemon-reload
+
+echo "Enabling services..."
+systemctl enable ada-pi-system-ups.service
+systemctl enable ada-pi-system-network.service
+systemctl enable ada-pi-system-modem.service
+systemctl enable ada-pi-system-gps.service
+systemctl enable ada-pi-system-bluetooth.service
+systemctl enable ada-pi-system-fan.service
+systemctl enable ada-pi-system-tacho-monitor.service
+systemctl enable ada-pi-system-tacho-uploader.service
+systemctl enable ada-pi-system-logs.service
+systemctl enable ada-pi-system-web.service
+
+echo "Starting services..."
+systemctl start ada-pi-system-ups.service
+systemctl start ada-pi-system-network.service
+systemctl start ada-pi-system-modem.service
+systemctl start ada-pi-system-gps.service
+systemctl start ada-pi-system-bluetooth.service
+systemctl start ada-pi-system-fan.service
+systemctl start ada-pi-system-tacho-monitor.service
+systemctl start ada-pi-system-tacho-uploader.service
+systemctl start ada-pi-system-logs.service
+systemctl start ada-pi-system-web.service
+
+echo "=== ADA-Pi-System Installed Successfully ==="

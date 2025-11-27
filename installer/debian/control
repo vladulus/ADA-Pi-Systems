@@ -1,0 +1,10 @@
+Package: ada-pi-system
+Version: 1.0
+Section: utils
+Priority: optional
+Architecture: all
+Maintainer: ADA Systems <support@adasystems.local>
+Description: ADA-Pi System — Complete backend + services for Raspberry Pi.
+ This package installs the ADA-Pi backend into /usr/local/ada-pi-system,
+ configures systemd services, and starts them automatically.
+Depends: python3

@@ -1,0 +1,7 @@
+{
+  "version": "1.0.0",
+  "build": 1,
+  "device": "ADA-PI-RPI5",
+  "date": "2025-01-01",
+  "description": "Initial stable firmware."
+}

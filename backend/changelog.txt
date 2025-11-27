@@ -1,0 +1,12 @@
+ADA-Pi Firmware Changelog
+=========================
+
+v1.0.0 (2025-01-01)
+- Initial stable firmware
+- Full backend engine
+- OTA system enabled
+- Tacho logging & rotation
+- OBD USB worker
+- Modem, GPS, UPS, fan modules
+- Web API + WebSocket + IPC bridge
+- Cloud uploader and systeminfo
