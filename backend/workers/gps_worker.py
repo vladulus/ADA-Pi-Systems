@@ -167,10 +167,11 @@ class GPSWorker:
         auto_unit = "mph" if country in MPH_COUNTRIES else "kmh"
         self.gps.set_auto_unit(auto_unit)
 
-        # Update module
+        # Update module with correct methods
         self.gps.update_position(lat, lon, alt)
         self.gps.update_speed(speed)
         self.gps.update_fix(fix)
+        # Set satellites count directly (no method for int)
         self.gps.satellites = satellites
 
         # Notify frontend
@@ -183,6 +184,8 @@ class GPSWorker:
             "satellites": satellites,
             "fix": fix
         })
+        
+        logger.log("DEBUG", f"GPS module updated: fix={self.gps.fix}, lat={self.gps.latitude}")
 
     # -------------------------------------------------------------
     def _nmea_to_decimal(self, value, direction):
