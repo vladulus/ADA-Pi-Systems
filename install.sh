@@ -11,7 +11,7 @@ echo "╚═══════════════════════�
 echo ""
 
 # Check if running as root
-if [ "$EUID" -ne 0 ]; then 
+if [ "$EUID" -ne 0 ]; then
     echo "❌ Please run as root: sudo bash install.sh"
     exit 1
 fi
@@ -67,14 +67,25 @@ echo "✓ System updated"
 echo ""
 
 echo "📦 Step 3/11: Installing system dependencies..."
+echo "   (This may take a few minutes...)"
 if [ "$INSTALL_KIOSK" = true ]; then
     apt-get install -y \
         python3 \
         python3-pip \
+        python3-venv \
         i2c-tools \
+        python3-smbus \
         git \
         curl \
         wget \
+        jq \
+        gpsd \
+        gpsd-clients \
+        libgps-dev \
+        modemmanager \
+        network-manager \
+        bluez \
+        bluez-tools \
         chromium-browser \
         xserver-xorg \
         x11-xserver-utils \
@@ -86,10 +97,20 @@ else
     apt-get install -y \
         python3 \
         python3-pip \
+        python3-venv \
         i2c-tools \
+        python3-smbus \
         git \
         curl \
         wget \
+        jq \
+        gpsd \
+        gpsd-clients \
+        libgps-dev \
+        modemmanager \
+        network-manager \
+        bluez \
+        bluez-tools \
         > /dev/null 2>&1
     echo "✓ Dependencies installed"
 fi
@@ -103,6 +124,7 @@ echo "✓ Files copied to /opt/ada-pi"
 echo ""
 
 echo "🐍 Step 5/11: Installing Python packages..."
+echo "   (This may take a minute...)"
 cd /opt/ada-pi/backend
 pip3 install -r requirements.txt --break-system-packages -q > /dev/null 2>&1
 echo "✓ Python packages installed"
@@ -153,7 +175,7 @@ echo "✓ Data directories created"
 echo ""
 
 echo "⚙️  Step 7/11: Creating systemd service..."
-cat > /etc/systemd/system/ada-pi.service << 'SERVICE_EOF'
+cat > /etc/systemd/system/ada-pi-backend.service << 'SERVICE_EOF'
 [Unit]
 Description=ADA-Pi Backend Engine
 After=network-online.target
@@ -166,6 +188,8 @@ WorkingDirectory=/opt/ada-pi/backend
 ExecStart=/usr/bin/python3 /opt/ada-pi/backend/main.py
 Restart=always
 RestartSec=5
+StandardOutput=journal
+StandardError=journal
 Environment=PYTHONUNBUFFERED=1
 
 [Install]
@@ -173,13 +197,13 @@ WantedBy=multi-user.target
 SERVICE_EOF
 
 systemctl daemon-reload
-systemctl enable ada-pi > /dev/null 2>&1
-echo "✓ Service created and enabled"
+systemctl enable ada-pi-backend > /dev/null 2>&1
+echo "✓ Service created and enabled (ada-pi-backend.service)"
 echo ""
 
 if [ "$INSTALL_KIOSK" = true ]; then
     echo "🖥️  Step 8/11: Setting up kiosk mode..."
-    
+
     # Create kiosk script
     cat > /usr/local/bin/ada-pi-kiosk << 'KIOSK_EOF'
 #!/bin/bash
@@ -192,7 +216,7 @@ xset s noblank
 unclutter -idle 0.5 -root &
 
 # Wait for backend to start
-sleep 5
+sleep 10
 
 # Launch Chromium in kiosk mode
 chromium-browser \
@@ -208,12 +232,12 @@ chromium-browser \
 # Keep script running
 wait
 KIOSK_EOF
-    
+
     chmod +x /usr/local/bin/ada-pi-kiosk
-    
+
     # Create autostart directory
-    mkdir -p /home/${ACTUAL_USER}/.config/lxsession/LXDE-pi
-    
+    mkdir -p /home/${ACTUAL_USER}/.config/autostart
+
     # Create autostart file
     cat > /home/${ACTUAL_USER}/.config/autostart/ada-pi-kiosk.desktop << 'AUTOSTART_EOF'
 [Desktop Entry]
@@ -224,12 +248,12 @@ Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
 AUTOSTART_EOF
-    
+
     chown -R ${ACTUAL_USER}:${ACTUAL_USER} /home/${ACTUAL_USER}/.config
-    
+
     # Set default to graphical mode
     systemctl set-default graphical.target > /dev/null 2>&1
-    
+
     echo "✓ Kiosk mode configured"
     echo ""
 else
@@ -260,14 +284,14 @@ fi
 echo ""
 
 echo "🚀 Step 11/11: Starting services..."
-systemctl start ada-pi
-sleep 2
+systemctl start ada-pi-backend
+sleep 3
 
 # Check if service started
-if systemctl is-active --quiet ada-pi; then
-    echo "✓ ADA-Pi service started successfully"
+if systemctl is-active --quiet ada-pi-backend; then
+    echo "✓ ADA-Pi backend service started successfully"
 else
-    echo "⚠️  Service may have issues - check logs"
+    echo "⚠️  Service may have issues - check logs with: sudo journalctl -u ada-pi-backend -f"
 fi
 echo ""
 
@@ -293,6 +317,7 @@ echo ""
 echo "✓ Backend: Running on ports 8000 (HTTP) and 9000 (WebSocket)"
 echo "✓ Frontend: Web dashboard ready"
 echo "✓ Systemd: Service enabled (auto-starts on boot)"
+echo "✓ Service name: ada-pi-backend.service"
 
 if [ "$INSTALL_KIOSK" = true ]; then
     echo "✓ Kiosk: Will auto-start on display after reboot"
@@ -349,7 +374,7 @@ echo "   Password: admin"
 echo ""
 echo "To change:"
 echo "   sudo nano /opt/ada-pi/backend/config.json"
-echo "   sudo systemctl restart ada-pi"
+echo "   sudo systemctl restart ada-pi-backend"
 echo ""
 
 if [ "$INSTALL_KIOSK" = true ]; then
@@ -371,16 +396,25 @@ echo "🔍 USEFUL COMMANDS"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "Check status:"
-echo "   sudo systemctl status ada-pi"
+echo "   sudo systemctl status ada-pi-backend"
 echo ""
-echo "View logs:"
-echo "   sudo journalctl -u ada-pi -f"
+echo "View logs (live):"
+echo "   sudo journalctl -u ada-pi-backend -f"
+echo ""
+echo "View recent logs:"
+echo "   sudo journalctl -u ada-pi-backend -n 100"
 echo ""
 echo "Restart service:"
-echo "   sudo systemctl restart ada-pi"
+echo "   sudo systemctl restart ada-pi-backend"
+echo ""
+echo "Stop service:"
+echo "   sudo systemctl stop ada-pi-backend"
 echo ""
 echo "Test API:"
-echo "   curl http://localhost:8000/api/system/info"
+echo "   curl http://localhost:8000/api/system/info | jq"
+echo ""
+echo "Test WebSocket (check ports):"
+echo "   sudo netstat -tuln | grep -E '8000|9000'"
 echo ""
 
 if [ -z "$TAILSCALE_IP" ]; then
