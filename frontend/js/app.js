@@ -6,6 +6,8 @@ class AdaPiApp {
         this.ws = null;
         this.currentPage = 'dashboard';
         this.data = {};
+        this.lastUpdate = 0;
+        this.updateThrottle = 1000; // Only update once per second
         
         this.init();
     }
@@ -16,8 +18,8 @@ class AdaPiApp {
         this.connectWebSocket();
         this.loadPage('dashboard');
         
-        // Poll API every 5 seconds as backup
-        setInterval(() => this.refreshData(), 5000);
+        // Poll API every 30 seconds as backup (reduced from 5s to prevent overload)
+        setInterval(() => this.refreshData(), 30000);
     }
     
     // Navigation
@@ -75,8 +77,10 @@ class AdaPiApp {
                 break;
         }
         
-        // Refresh data for current page
-        this.refreshData();
+        // Initial data load only when page first loads
+        if (!this.data[page]) {
+            this.refreshData();
+        }
     }
     
     // WebSocket Connection
@@ -140,8 +144,12 @@ class AdaPiApp {
             console.log(`WebSocket: ${event} (unmapped) →`, payload);
         }
         
-        // Update current page if relevant
-        this.updateCurrentPage();
+        // Throttled update - only update once per second max
+        const now = Date.now();
+        if (now - this.lastUpdate > this.updateThrottle) {
+            this.lastUpdate = now;
+            this.updateCurrentPage();
+        }
     }
     
     updateConnectionStatus(connected) {
