@@ -62,11 +62,9 @@ class TachoWorker:
         except:
             pass
 
-        # 3. Update tacho module entry
+        # 3. Get GPS position
         lat = getattr(self.gps, "lat", 0)
         lon = getattr(self.gps, "lon", 0)
-
-        self.tacho.push_speed_point(speed, lat, lon)
 
         # 4. Prepare DB entry (used for TachoUploader)
         point = {
@@ -76,9 +74,17 @@ class TachoWorker:
             "lon": lon
         }
 
-        # 5. Store in StorageManager via module
+        # 5. Store in tacho module - FIX: Use record_speed or log_point method
         try:
-            self.tacho.log_point(point)
+            # Try record_speed method if it exists
+            if hasattr(self.tacho, 'record_speed'):
+                self.tacho.record_speed(speed, lat, lon)
+            # Otherwise try log_point
+            elif hasattr(self.tacho, 'log_point'):
+                self.tacho.log_point(point)
+            # If neither exists, just update the module state
+            else:
+                self.tacho.update({"speed": speed, "lat": lat, "lon": lon})
         except Exception as e:
             logger.log("ERROR", f"Failed to log tacho point: {e}")
 

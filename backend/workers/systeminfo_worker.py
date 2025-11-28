@@ -63,8 +63,8 @@ class SystemInfoWorker:
             "uptime": uptime
         }
 
-        # Update module
-        self.modules["system"].update(payload)
+        # Update module - FIX: Use dot notation instead of subscript
+        self.modules.system.update(payload)
 
         # Push WebSocket event
         router.publish("system_update", payload)

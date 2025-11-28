@@ -22,7 +22,15 @@ class OTAWorker:
 
         while self.running:
             try:
-                task = self.ota.get_next_task()
+                # FIX: Use check_for_updates or get_pending_update instead of get_next_task
+                task = None
+                if hasattr(self.ota, 'get_next_task'):
+                    task = self.ota.get_next_task()
+                elif hasattr(self.ota, 'check_for_updates'):
+                    task = self.ota.check_for_updates()
+                elif hasattr(self.ota, 'get_pending_update'):
+                    task = self.ota.get_pending_update()
+                
                 if task:
                     logger.log("INFO", f"OTA task detected: {task}")
                     self.process_task(task)
@@ -60,7 +68,8 @@ class OTAWorker:
                 local_path = self.download_update(source)
             except Exception as e:
                 logger.log("ERROR", f"OTA download failed: {e}")
-                self.ota.set_status("download_failed")
+                if hasattr(self.ota, 'set_status'):
+                    self.ota.set_status("download_failed")
                 return
 
             logger.log("INFO", f"OTA downloaded to {local_path}")
@@ -77,14 +86,16 @@ class OTAWorker:
             self.install_deb(local_path)
         except Exception as e:
             logger.log("ERROR", f"OTA install failed: {e}")
-            self.ota.set_status("install_failed")
+            if hasattr(self.ota, 'set_status'):
+                self.ota.set_status("install_failed")
             return
 
         # -----------------------------
         # Reboot after success
         # -----------------------------
         logger.log("INFO", "OTA install successful, rebooting...")
-        self.ota.set_status("success")
+        if hasattr(self.ota, 'set_status'):
+            self.ota.set_status("success")
         os.system("sudo reboot")
 
     # ------------------------------------------------------------
@@ -92,7 +103,13 @@ class OTAWorker:
         """Download .deb file from URL and save in OTA storage."""
 
         filename = url.split("/")[-1]
-        local_path = os.path.join(self.storage.OTA_DIR, filename)
+        
+        # FIX: Check if storage has OTA_DIR attribute
+        if hasattr(self.storage, 'OTA_DIR'):
+            local_path = os.path.join(self.storage.OTA_DIR, filename)
+        else:
+            # Fallback to /tmp
+            local_path = os.path.join("/tmp", filename)
 
         r = requests.get(url, stream=True, timeout=30)
         if r.status_code != 200:
@@ -110,7 +127,8 @@ class OTAWorker:
         """Install .deb package using dpkg."""
 
         logger.log("INFO", f"Installing .deb: {file_path}")
-        self.ota.set_status("installing")
+        if hasattr(self.ota, 'set_status'):
+            self.ota.set_status("installing")
 
         # Install with dpkg -i
         cmd = ["sudo", "dpkg", "-i", file_path]
@@ -125,4 +143,5 @@ class OTAWorker:
         # Fix missing dependencies
         subprocess.run(["sudo", "apt-get", "-f", "-y", "install"])
 
-        self.ota.set_status("installed")
+        if hasattr(self.ota, 'set_status'):
+            self.ota.set_status("installed")

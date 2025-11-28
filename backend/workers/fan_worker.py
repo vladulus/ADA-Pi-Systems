@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # ADA-Pi Fan Worker
 # Supports:
-#   ✔ Raspberry Pi 5 hardware fan (thermal driver)
-#   ✔ Generic GPIO PWM fan
-#   ✔ Auto mode with temperature curve
-#   ✔ Manual override mode
+#   ✓ Raspberry Pi 5 hardware fan (thermal driver)
+#   ✓ Generic GPIO PWM fan
+#   ✓ Auto mode with temperature curve
+#   ✓ Manual override mode
 
 import time
 import os
@@ -19,6 +19,7 @@ class FanWorker:
     def __init__(self, fan_module):
         self.fan = fan_module
         self.running = True
+        self.current_temp = 0.0
 
         # temperature source used by Raspberry Pi 5
         self.cpu_temp_file = "/sys/class/thermal/thermal_zone0/temp"
@@ -28,7 +29,9 @@ class FanWorker:
         self.hw_fan_max_file = "/sys/devices/platform/cooling_fan/hwmon/hwmon0/pwm1_max"
 
         self.has_hw_fan = os.path.exists(self.hw_fan_speed_file)
-        self.fan.update(supports_hw=self.has_hw_fan)
+        
+        # FIX: Remove temperature parameter
+        self.fan.update({"supports_hw": self.has_hw_fan})
 
         logger.log("INFO", f"FanWorker initialized (hardware_fan={self.has_hw_fan})")
 
@@ -38,18 +41,24 @@ class FanWorker:
 
         while self.running:
             try:
-                temp = self._read_temp()
-                self.fan.update(temperature=temp)
+                # Read temperature
+                self.current_temp = self._read_temp()
 
-                if self.fan.read_status()["mode"] == "auto":
-                    speed = self._auto_speed(temp)
+                # Get fan mode
+                status = self.fan.read_status()
+                
+                if status.get("mode") == "auto":
+                    speed = self._auto_speed(self.current_temp)
                     self._apply_speed(speed)
-
                 else:  # manual mode
-                    speed = self.fan.read_status()["speed"]
+                    speed = status.get("speed", 0)
                     self._apply_speed(speed)
 
-                router.publish("fan_update", self.fan.read_status())
+                # Publish update with temperature included
+                router.publish("fan_update", {
+                    **self.fan.read_status(),
+                    "temperature": self.current_temp
+                })
 
                 time.sleep(self.INTERVAL)
 
@@ -101,7 +110,8 @@ class FanWorker:
         """
         Writing speed to hardware fan or fallback PWM.
         """
-        self.fan.update(speed=percent)
+        # FIX: Update with dict instead of keyword argument
+        self.fan.update({"speed": percent})
 
         if self.has_hw_fan:
             self._apply_hw_fan(percent)
