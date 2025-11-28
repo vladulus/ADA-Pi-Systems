@@ -176,9 +176,9 @@ class GPSWorker:
 
         # Notify frontend
         router.publish("gps_update", {
-            "lat": lat,
-            "lon": lon,
-            "alt": alt,
+            "latitude": lat,
+            "longitude": lon,
+            "altitude": alt,
             "speed": self.gps.get_speed(),
             "unit": self.gps.get_unit(),
             "satellites": satellites,
