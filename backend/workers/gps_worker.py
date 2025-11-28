@@ -1,5 +1,6 @@
 import time
 import subprocess
+import re
 from datetime import datetime, timezone
 from logger import logger
 from ipc.router import router
@@ -99,7 +100,26 @@ class GPSWorker:
             # Parse NMEA sentences
             if "nmea:" not in loc:
                 logger.log("WARN", "No NMEA data in mmcli output")
-                return False
+
+            # Fallback: parse mmcli key/value location lines (latitude/longitude/altitude)
+            lat_field = None
+            lon_field = None
+            alt_field = None
+
+            for line in loc.split("\n"):
+                lower_line = line.lower()
+                if "latitude" in lower_line:
+                    m = re.search(r"latitude:\s*([-+]?\d+(?:\.\d+)?)", lower_line)
+                    if m:
+                        lat_field = float(m.group(1))
+                if "longitude" in lower_line:
+                    m = re.search(r"longitude:\s*([-+]?\d+(?:\.\d+)?)", lower_line)
+                    if m:
+                        lon_field = float(m.group(1))
+                if "altitude" in lower_line:
+                    m = re.search(r"altitude:\s*([-+]?\d+(?:\.\d+)?)", lower_line)
+                    if m:
+                        alt_field = float(m.group(1))
 
             # Extract all lines containing NMEA sentences
             # Format: "GPS | nmea: $GPGSA,..." or "     |         $GNGNS,..."
@@ -114,53 +134,94 @@ class GPSWorker:
 
             logger.log("DEBUG", f"Found {len(nmea_lines)} NMEA sentences")
 
-            if not nmea_lines:
-                logger.log("WARN", "No NMEA sentences parsed")
-                return False
-
-            # Parse position from GNGNS or GPRMC
+            # Parse position from common NMEA messages (GNS/GGA for position, RMC for speed/heading)
             lat, lon, alt, speed_kmh = None, None, 0.0, 0.0
-            satellites = 0
+            satellites = None
             hdop = None
             heading = None
             timestamp = None
+            fix_state = False
 
             for nmea in nmea_lines:
-                # GNGNS: $GNGNS,time,lat,N,lon,W,mode,sats,hdop,alt,sep,...
-                if nmea.startswith("$GNGNS"):
+                # GNGNS or GPGNS: $G?GNS,time,lat,N,lon,W,mode,sats,hdop,alt,sep,...
+                if nmea.startswith("$GNGNS") or nmea.startswith("$GPGNS"):
                     parts = nmea.split(",")
                     if len(parts) >= 10 and parts[6] != "N":  # N = no fix
-                        lat = self._nmea_to_decimal(parts[2], parts[3])
-                        lon = self._nmea_to_decimal(parts[4], parts[5])
-                        satellites = int(parts[7]) if parts[7] else 0
-                        alt = float(parts[9]) if parts[9] else 0.0
-                        hdop = float(parts[8]) if parts[8] else None
+                        lat = self._nmea_to_decimal(parts[2], parts[3]) if lat is None else lat
+                        lon = self._nmea_to_decimal(parts[4], parts[5]) if lon is None else lon
+                        satellites = int(parts[7]) if parts[7] else satellites
+                        alt = float(parts[9]) if parts[9] else alt
+                        hdop = float(parts[8]) if parts[8] else hdop
+                        fix_state = True
 
-                # GPRMC: get speed
-                elif nmea.startswith("$GPRMC"):
+                # GPGGA / GNGGA: $G?GGA,time,lat,N,lon,E,fix,sats,hdop,alt,alt_unit,sep,sep_unit,...
+                elif nmea.startswith("$GPGGA") or nmea.startswith("$GNGGA"):
                     parts = nmea.split(",")
-                    if len(parts) >= 8 and parts[2] == "A":
+                    if len(parts) >= 10 and parts[6] not in ["", "0"]:
+                        lat = self._nmea_to_decimal(parts[2], parts[3]) if lat is None else lat
+                        lon = self._nmea_to_decimal(parts[4], parts[5]) if lon is None else lon
+                        satellites = int(parts[7]) if parts[7] else satellites
+                        hdop = float(parts[8]) if parts[8] else hdop
+                        alt = float(parts[9]) if parts[9] else alt
+                        fix_state = True
+
+                # GPRMC / GNRMC: speed/heading/date/time/lat/lon
+                elif nmea.startswith("$GPRMC") or nmea.startswith("$GNRMC"):
+                    parts = nmea.split(",")
+                    if len(parts) >= 10 and parts[2] == "A":  # A = active fix
+                        lat = self._nmea_to_decimal(parts[3], parts[4]) if len(parts) > 4 and parts[3] else lat
+                        lon = self._nmea_to_decimal(parts[5], parts[6]) if len(parts) > 6 and parts[5] else lon
+                        fix_state = True
+
                         if parts[7]:
                             speed_knots = float(parts[7])
                             speed_kmh = speed_knots * 1.852
 
-                        if len(parts) >= 9 and parts[8]:
+                        if parts[8]:
                             heading = float(parts[8])
 
-                        if len(parts) >= 10 and parts[1] and parts[9]:
+                        time_str = parts[1]
+                        date_str = parts[9]
+                        if time_str and date_str:
                             try:
-                                timestamp = datetime.strptime(parts[9] + parts[1], "%d%m%y%H%M%S").replace(tzinfo=timezone.utc).isoformat()
+                                # Strip fractional seconds if present
+                                time_clean = time_str.split(".")[0].ljust(6, "0")
+                                timestamp = datetime.strptime(date_str + time_clean, "%d%m%y%H%M%S").replace(tzinfo=timezone.utc).isoformat()
                             except ValueError:
                                 timestamp = None
+
+            # Use mmcli key/value fallback if NMEA parsing didn't fill coordinates (or when NMEA is absent)
+            if lat is None and lat_field is not None:
+                lat = lat_field
+                fix_state = True
+            if lon is None and lon_field is not None:
+                lon = lon_field
+                fix_state = True
+            if alt in [None, 0.0] and alt_field is not None:
+                alt = alt_field
+
+            # If there were no NMEA lines at all but we got mmcli coordinates, keep going
+            if not nmea_lines and lat is not None and lon is not None:
+                logger.log("WARN", "No NMEA sentences parsed, using mmcli coordinates")
 
             if lat is None or lon is None:
                 logger.log("WARN", f"Failed to parse GPS coordinates (found {len(nmea_lines)} NMEA lines)")
                 return False
 
+            # Fallback defaults
+            if satellites is None:
+                satellites = 0
+            if alt is None:
+                alt = 0.0
+            if timestamp is None:
+                timestamp = datetime.now(timezone.utc).isoformat()
+
+            fix_state = fix_state or False
+
             logger.log("INFO", f"GPS fix: {lat:.6f}, {lon:.6f}, {satellites} sats")
 
             # Update GPS module
-            self.update_gps(lat, lon, alt, speed_kmh, satellites, True, hdop=hdop, heading=heading, timestamp=timestamp or datetime.now(timezone.utc).isoformat())
+            self.update_gps(lat, lon, alt, speed_kmh, satellites, fix_state, hdop=hdop, heading=heading, timestamp=timestamp)
             return True
 
         except subprocess.CalledProcessError:
