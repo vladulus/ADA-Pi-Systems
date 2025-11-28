@@ -23,11 +23,18 @@ class WebSocketBridge:
         if not event_name:
             return
         
+        # Check if WebSocket loop is ready
+        if not self.ws.loop or not self.ws.loop.is_running():
+            return
+        
         # Forward to WebSocket in its event loop
-        asyncio.run_coroutine_threadsafe(
-            self.ws.broadcast(event_name, data),
-            self.ws.loop
-        )
+        try:
+            asyncio.run_coroutine_threadsafe(
+                self.ws.broadcast(event_name, data),
+                self.ws.loop
+            )
+        except Exception as e:
+            logger.log("WARN", f"WebSocket broadcast failed: {e}")
     
     # ------------------------------------------------------------
     @staticmethod
