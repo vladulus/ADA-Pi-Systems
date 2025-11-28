@@ -100,10 +100,16 @@ class GPSWorker:
                 logger.log("WARN", "No NMEA data in mmcli output")
                 return False
 
+            # Extract all lines containing NMEA sentences
+            # Format: "GPS | nmea: $GPGSA,..." or "     |         $GNGNS,..."
             nmea_lines = []
             for line in loc.split("\n"):
-                if line.strip().startswith("$"):
-                    nmea_lines.append(line.strip())
+                # Check if line contains a $ (NMEA sentence marker)
+                if "$" in line:
+                    # Extract the part after $ (might have leading spaces/pipes)
+                    sentence = line[line.index("$"):].strip()
+                    if sentence.startswith("$"):
+                        nmea_lines.append(sentence)
 
             logger.log("DEBUG", f"Found {len(nmea_lines)} NMEA sentences")
             
