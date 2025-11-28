@@ -18,8 +18,8 @@ class SystemInfoWorker:
 
     INTERVAL = 2  # seconds
 
-    def __init__(self, modules):
-        self.modules = modules
+    def __init__(self, system_module):
+        self.system = system_module
         self.running = True
 
     # ------------------------------------------------------------
@@ -63,8 +63,8 @@ class SystemInfoWorker:
             "uptime": uptime
         }
 
-        # Update module - FIX: Use dot notation instead of subscript
-        self.modules.system.update(payload)
+        # Update module - FIX: system is passed directly as parameter
+        self.system.update(payload)
 
         # Push WebSocket event
         router.publish("system_update", payload)

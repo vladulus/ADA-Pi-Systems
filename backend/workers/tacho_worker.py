@@ -82,9 +82,7 @@ class TachoWorker:
             # Otherwise try log_point
             elif hasattr(self.tacho, 'log_point'):
                 self.tacho.log_point(point)
-            # If neither exists, just update the module state
-            else:
-                self.tacho.update({"speed": speed, "lat": lat, "lon": lon})
+            # Skip if no logging method available
         except Exception as e:
             logger.log("ERROR", f"Failed to log tacho point: {e}")
 
