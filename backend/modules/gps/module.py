@@ -9,7 +9,10 @@ class GPSModule:
         self.latitude = 0.0
         self.longitude = 0.0
         self.altitude = 0.0
+        self.hdop = 0.0
         self.speed_kmh = 0.0    # speed always stored internally as km/h
+        self.heading = 0.0
+        self.timestamp = None
         self.sat_list = []      # [ { azimuth, elevation, snr, constellation }, ... ]
 
         # Unit selection
@@ -26,8 +29,11 @@ class GPSModule:
             "latitude": self.latitude,
             "longitude": self.longitude,
             "altitude": self.altitude,
+            "hdop": self.hdop,
             "speed": self.get_speed(),
-            "unit": self.get_unit()
+            "unit": self.get_unit(),
+            "heading": self.heading,
+            "timestamp": self.timestamp
         }
 
     # ------------------------------------------------------------
@@ -39,10 +45,16 @@ class GPSModule:
     # ------------------------------------------------------------
     # UPDATE METHODS
     # ------------------------------------------------------------
-    def update_position(self, lat, lon, alt):
+    def update_position(self, lat, lon, alt, hdop=None, heading=None, timestamp=None):
         self.latitude = lat
         self.longitude = lon
         self.altitude = alt
+        if hdop is not None:
+            self.hdop = hdop
+        if heading is not None:
+            self.heading = heading
+        if timestamp is not None:
+            self.timestamp = timestamp
 
     def update_fix(self, fix_state):
         self.fix = fix_state

@@ -1,3 +1,5 @@
+# Add these routes to server.py before "return app" line (around line 407)
+
 from flask import jsonify, send_from_directory
 import os
 

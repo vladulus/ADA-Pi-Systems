@@ -1,5 +1,6 @@
 import time
 import subprocess
+from datetime import datetime, timezone
 from logger import logger
 from ipc.router import router
 
@@ -27,7 +28,7 @@ def detect_country_from_gps(lat, lon):
 
 class GPSWorker:
     """GPS Worker - Modem GPS only (Quectel/Simcom)"""
-    
+
     INTERVAL = 1
 
     def __init__(self, gps_module: GPSModule):
@@ -64,13 +65,13 @@ class GPSWorker:
             # Detect modem (only once)
             if self.modem_index is None:
                 out = subprocess.check_output(
-                    ["mmcli", "-L"], 
+                    ["mmcli", "-L"],
                     stderr=subprocess.DEVNULL
                 ).decode()
-                
+
                 if "/" not in out:
                     return False
-                
+
                 line = out.strip().split("\n")[0]
                 self.modem_index = line.split("/")[-1].split()[0]
                 logger.log("INFO", f"Modem detected: {self.modem_index}")
@@ -112,7 +113,7 @@ class GPSWorker:
                         nmea_lines.append(sentence)
 
             logger.log("DEBUG", f"Found {len(nmea_lines)} NMEA sentences")
-            
+
             if not nmea_lines:
                 logger.log("WARN", "No NMEA sentences parsed")
                 return False
@@ -120,7 +121,10 @@ class GPSWorker:
             # Parse position from GNGNS or GPRMC
             lat, lon, alt, speed_kmh = None, None, 0.0, 0.0
             satellites = 0
-            
+            hdop = None
+            heading = None
+            timestamp = None
+
             for nmea in nmea_lines:
                 # GNGNS: $GNGNS,time,lat,N,lon,W,mode,sats,hdop,alt,sep,...
                 if nmea.startswith("$GNGNS"):
@@ -130,7 +134,8 @@ class GPSWorker:
                         lon = self._nmea_to_decimal(parts[4], parts[5])
                         satellites = int(parts[7]) if parts[7] else 0
                         alt = float(parts[9]) if parts[9] else 0.0
-                
+                        hdop = float(parts[8]) if parts[8] else None
+
                 # GPRMC: get speed
                 elif nmea.startswith("$GPRMC"):
                     parts = nmea.split(",")
@@ -139,16 +144,25 @@ class GPSWorker:
                             speed_knots = float(parts[7])
                             speed_kmh = speed_knots * 1.852
 
+                        if len(parts) >= 9 and parts[8]:
+                            heading = float(parts[8])
+
+                        if len(parts) >= 10 and parts[1] and parts[9]:
+                            try:
+                                timestamp = datetime.strptime(parts[9] + parts[1], "%d%m%y%H%M%S").replace(tzinfo=timezone.utc).isoformat()
+                            except ValueError:
+                                timestamp = None
+
             if lat is None or lon is None:
                 logger.log("WARN", f"Failed to parse GPS coordinates (found {len(nmea_lines)} NMEA lines)")
                 return False
 
             logger.log("INFO", f"GPS fix: {lat:.6f}, {lon:.6f}, {satellites} sats")
-            
+
             # Update GPS module
-            self.update_gps(lat, lon, alt, speed_kmh, satellites, True)
+            self.update_gps(lat, lon, alt, speed_kmh, satellites, True, hdop=hdop, heading=heading, timestamp=timestamp or datetime.now(timezone.utc).isoformat())
             return True
-            
+
         except subprocess.CalledProcessError:
             # Modem disconnected
             self.modem_index = None
@@ -159,16 +173,16 @@ class GPSWorker:
             return False
 
     # -------------------------------------------------------------
-    def update_gps(self, lat, lon, alt, speed, satellites, fix):
+    def update_gps(self, lat, lon, alt, speed, satellites, fix, hdop=None, heading=None, timestamp=None):
         """Update GPS module and notify frontend"""
-        
+
         # Auto-detect speed units
         country = detect_country_from_gps(lat, lon)
         auto_unit = "mph" if country in MPH_COUNTRIES else "kmh"
         self.gps.set_auto_unit(auto_unit)
 
         # Update module with correct methods
-        self.gps.update_position(lat, lon, alt)
+        self.gps.update_position(lat, lon, alt, hdop=hdop, heading=heading, timestamp=timestamp)
         self.gps.update_speed(speed)
         self.gps.update_fix(fix)
         # Set satellites count directly (no method for int)
@@ -179,28 +193,39 @@ class GPSWorker:
             "latitude": lat,
             "longitude": lon,
             "altitude": alt,
+            "hdop": hdop,
             "speed": self.gps.get_speed(),
             "unit": self.gps.get_unit(),
             "satellites": satellites,
-            "fix": fix
+            "fix": fix,
+            "heading": heading,
+            "timestamp": timestamp
         })
-        
+
         logger.log("DEBUG", f"GPS module updated: fix={self.gps.fix}, lat={self.gps.latitude}")
 
     # -------------------------------------------------------------
     def _nmea_to_decimal(self, value, direction):
-        """Convert NMEA coordinate to decimal degrees"""
+        """Convert NMEA coordinate to decimal degrees."""
         if not value:
             return None
-        
-        deg = float(value[:2])
-        minutes = float(value[2:])
-        dec = deg + (minutes / 60.0)
-        
-        if direction in ["S", "W"]:
-            dec = -dec
-        
-        return dec
+
+        try:
+            deg_len = 2 if direction in ["N", "S"] else 3
+            if len(value) <= deg_len:
+                return None
+
+            deg = float(value[:deg_len])
+            minutes = float(value[deg_len:])
+            dec = deg + (minutes / 60.0)
+
+            if direction in ["S", "W"]:
+                dec = -dec
+
+            return dec
+        except ValueError:
+            logger.log("WARN", f"Invalid NMEA coordinate: {value}{direction}")
+            return None
 
     # -------------------------------------------------------------
     def no_fix_warning(self):
