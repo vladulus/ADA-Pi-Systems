@@ -265,12 +265,47 @@ class AdaPiApp {
     }
     
     updateCurrentPage() {
-        // Re-render current page with updated data
-        const content = document.getElementById('content');
-        const scrollPosition = content.scrollTop;
-        
-        this.loadPage(this.currentPage);
-        
+    // Re-render current page with updated data WITHOUT calling loadPage
+    const content = document.getElementById('content');
+    const scrollPosition = content.scrollTop;
+    
+    // Render directly based on current page
+    switch(this.currentPage) {
+        case 'dashboard':
+            content.innerHTML = this.renderDashboard();
+            break;
+        case 'gps':
+            content.innerHTML = this.renderGPS();
+            break;
+        case 'obd':
+            content.innerHTML = this.renderOBD();
+            break;
+        case 'system':
+            content.innerHTML = this.renderSystem();
+            break;
+        case 'ups':
+            content.innerHTML = this.renderUPS();
+            break;
+        case 'network':
+            content.innerHTML = this.renderNetwork();
+            break;
+        case 'modem':
+            content.innerHTML = this.renderModem();
+            break;
+        case 'bluetooth':
+            content.innerHTML = this.renderBluetooth();
+            break;
+        case 'tacho':
+            content.innerHTML = this.renderTachograph();
+            break;
+        case 'logs':
+            content.innerHTML = this.renderLogs();
+            break;
+        case 'settings':
+            content.innerHTML = this.renderSettings();
+            break;
+         }
+            
         content.scrollTop = scrollPosition;
     }
     
