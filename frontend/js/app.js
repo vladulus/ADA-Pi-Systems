@@ -222,6 +222,9 @@ class AdaPiApp {
             case 'obd':
                 await this.fetchOBD();
                 break;
+            case 'logs':
+                await this.loadLogs();
+                break;
         }
         
         this.updateCurrentPage();
