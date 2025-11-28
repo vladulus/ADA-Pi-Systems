@@ -300,6 +300,7 @@ class AdaPiApp {
             break;
         case 'logs':
             content.innerHTML = this.renderLogs();
+            this.loadLogs();
             break;
         case 'settings':
             content.innerHTML = this.renderSettings();
