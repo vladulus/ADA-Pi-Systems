@@ -219,7 +219,9 @@ def create_app(modules, storage, ota_manager):
     @app.get("/api/gps")
     @require_auth
     def gps_status():
-        return ok(app.modules["gps"].read_status())
+        status = app.modules["gps"].read_status()
+        logger.log("DEBUG", f"API GPS endpoint: module_id={id(app.modules['gps'])}, status={status}")
+        return ok(status)
 
     @app.post("/api/gps/unit")
     @require_auth
@@ -409,7 +411,7 @@ def create_app(modules, storage, ota_manager):
     # ============================================================
     # FRONTEND ROUTES - Serve Web Dashboard
     # ============================================================
-    
+
     @app.route("/")
     def index():
         """Serve the main web dashboard"""
@@ -420,7 +422,7 @@ def create_app(modules, storage, ota_manager):
             return send_from_directory(frontend_dir, "index.html")
         else:
             return jsonify({"error": "Frontend not found", "path": frontend_dir}), 404
-    
+
 
     return app
 
