@@ -14,9 +14,11 @@ class WebSocketServer:
         self.port = port
         self.clients = set()
         self.loop = None
+        self.server = None
 
     # ------------------------------------------------------------
     async def handler(self, websocket, path):
+        """Handle new WebSocket client connection"""
         # new client connected
         self.clients.add(websocket)
         logger.log("INFO", f"WebSocket client connected. {len(self.clients)} total")
@@ -25,12 +27,10 @@ class WebSocketServer:
             async for message in websocket:
                 # client sent a message (for future commands)
                 pass
-
         except Exception as e:
             logger.log("WARN", f"WebSocket client disconnected: {e}")
-
         finally:
-            self.clients.remove(websocket)
+            self.clients.discard(websocket)
 
     # ------------------------------------------------------------
     async def broadcast(self, event, payload):
@@ -45,15 +45,16 @@ class WebSocketServer:
             "payload": payload
         })
 
-        dead = []
+        # Use websockets.broadcast() for efficient broadcasting
+        dead = set()
         for ws in self.clients:
             try:
                 await ws.send(msg)
-            except:
-                dead.append(ws)
+            except Exception:
+                dead.add(ws)
 
-        for ws in dead:
-            self.clients.remove(ws)
+        # Remove dead connections
+        self.clients -= dead
 
     # ------------------------------------------------------------
     def start(self):
@@ -62,14 +63,33 @@ class WebSocketServer:
         """
         logger.log("INFO", f"Starting WebSocket server on ws://{self.host}:{self.port}")
 
+        # Create new event loop for this thread
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
 
-        server = websockets.serve(self.handler, self.host, self.port)
-        self.loop.run_until_complete(server)
-        self.loop.run_forever()
+        # Start the server
+        try:
+            start_server = websockets.serve(
+                self.handler,
+                self.host,
+                self.port,
+                loop=self.loop
+            )
+            self.server = self.loop.run_until_complete(start_server)
+            logger.log("INFO", f"WebSocket server running on port {self.port}")
+
+            # Run event loop forever
+            self.loop.run_forever()
+        except Exception as e:
+            logger.log("ERROR", f"WebSocket server failed to start: {e}")
+        finally:
+            if self.server:
+                self.server.close()
+                self.loop.run_until_complete(self.server.wait_closed())
+            self.loop.close()
 
     # ------------------------------------------------------------
     def stop(self):
+        """Stop the WebSocket server"""
         if self.loop:
-            self.loop.stop()
+            self.loop.call_soon_threadsafe(self.loop.stop)
