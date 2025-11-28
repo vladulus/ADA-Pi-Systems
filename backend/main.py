@@ -132,13 +132,12 @@ class BackendEngine:
         ws_server = WebSocketServer(host="0.0.0.0", port=9000)
 
         # Enable tagging of IPC events
-        WebSocketBridge.enable_event_tracking()
-
+        bridge = WebSocketBridge(ws_server)
         ws_thread = threading.Thread(target=ws_server.start, daemon=True)
         ws_thread.start()
-
         # Bridge IPC → WebSocket
-        bridge = WebSocketBridge(ws_server)
+        WebSocketBridge.enable_event_tracking()
+
 
         logger.log("INFO", "WebSocket server running on port 9000")
 
