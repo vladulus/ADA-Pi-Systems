@@ -97,6 +97,7 @@ class GPSWorker:
 
             # Parse NMEA sentences
             if "nmea:" not in loc:
+                logger.log("WARN", "No NMEA data in mmcli output")
                 return False
 
             nmea_lines = []
@@ -104,7 +105,10 @@ class GPSWorker:
                 if line.strip().startswith("$"):
                     nmea_lines.append(line.strip())
 
+            logger.log("DEBUG", f"Found {len(nmea_lines)} NMEA sentences")
+            
             if not nmea_lines:
+                logger.log("WARN", "No NMEA sentences parsed")
                 return False
 
             # Parse position from GNGNS or GPRMC
@@ -130,8 +134,11 @@ class GPSWorker:
                             speed_kmh = speed_knots * 1.852
 
             if lat is None or lon is None:
+                logger.log("WARN", f"Failed to parse GPS coordinates (found {len(nmea_lines)} NMEA lines)")
                 return False
 
+            logger.log("INFO", f"GPS fix: {lat:.6f}, {lon:.6f}, {satellites} sats")
+            
             # Update GPS module
             self.update_gps(lat, lon, alt, speed_kmh, satellites, True)
             return True
