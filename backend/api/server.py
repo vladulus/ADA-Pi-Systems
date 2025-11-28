@@ -26,7 +26,9 @@ from .helpers import (
 # ------------------------------------------------------------
 
 def create_app(modules, storage, ota_manager):
-    app = Flask(__name__)
+    import os
+    frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend"))
+    app = Flask(__name__, static_folder=frontend_dir, static_url_path='/static')
     app.config["JSON_SORT_KEYS"] = False
 
     # Attach backend objects
@@ -419,13 +421,6 @@ def create_app(modules, storage, ota_manager):
         else:
             return jsonify({"error": "Frontend not found", "path": frontend_dir}), 404
     
-    @app.route("/static/<path:path>")
-    def serve_static(path):
-        """Serve static files (CSS, JS)"""
-        from flask import send_from_directory
-        import os
-        frontend_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "frontend")
-        return send_from_directory(frontend_dir, path)
 
     return app
 
