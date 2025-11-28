@@ -101,23 +101,52 @@ class GPSWorker:
                 else:
                     return False
 
-            # Get current location (fast, doesn't spawn processes)
+            # Get current location (returns NMEA sentences)
             loc = subprocess.check_output(
                 ["mmcli", "-m", modem_index, "--location-get"],
                 stderr=subprocess.DEVNULL
             ).decode()
 
-            lat = self._extract("latitude", loc)
-            lon = self._extract("longitude", loc)
-            alt = self._extract("altitude", loc)
-            spd = self._extract("speed", loc)
-
-            if not lat or not lon:
+            # Parse NMEA sentences from mmcli output
+            # mmcli returns: GPS | nmea: $GNGNS,time,lat,N,lon,W,...
+            if "nmea:" not in loc:
                 return False
 
-            self.update_gps(float(lat), float(lon), float(alt or 0), float(spd or 0), True)
+            # Extract NMEA sentences
+            nmea_lines = []
+            for line in loc.split("\n"):
+                if line.strip().startswith("$"):
+                    nmea_lines.append(line.strip())
+
+            # Parse GNGNS or GPRMC sentences for position
+            lat, lon, alt, speed_kmh = None, None, 0.0, 0.0
+            
+            for nmea in nmea_lines:
+                # GNGNS: $GNGNS,time,lat,N,lon,W,mode,sats,hdop,alt,sep,...
+                if nmea.startswith("$GNGNS"):
+                    parts = nmea.split(",")
+                    if len(parts) >= 10 and parts[6] != "N":  # N means no fix
+                        lat = self._nmea_to_decimal(parts[2], parts[3])
+                        lon = self._nmea_to_decimal(parts[4], parts[5])
+                        alt = float(parts[9]) if parts[9] else 0.0
+                        break
+                
+                # GPRMC: $GPRMC,time,status,lat,N,lon,W,speed,course,date,...
+                elif nmea.startswith("$GPRMC"):
+                    parts = nmea.split(",")
+                    if len(parts) >= 9 and parts[2] == "A":  # A means valid
+                        lat = self._nmea_to_decimal(parts[3], parts[4])
+                        lon = self._nmea_to_decimal(parts[5], parts[6])
+                        speed_knots = float(parts[7]) if parts[7] else 0.0
+                        speed_kmh = speed_knots * 1.852
+
+            if lat is None or lon is None:
+                return False
+
+            self.update_gps(lat, lon, alt, speed_kmh, True)
             return True
-        except:
+            
+        except Exception as e:
             # If modem disconnects, reset the flag
             self._gps_enabled = False
             return False
