@@ -38,6 +38,7 @@ class GPSWorker:
         self.running = True
         self.mode = None
         self.ser = None
+        self._gps_enabled = False  # Track if modem GPS is already enabled
 
     # -------------------------------------------------------------
     def start(self):
@@ -79,17 +80,31 @@ class GPSWorker:
     # -------------------------------------------------------------
     def try_modem_gnss(self):
         try:
-            out = subprocess.check_output(["mmcli", "-L"]).decode()
+            # Check if modem exists
+            out = subprocess.check_output(["mmcli", "-L"], stderr=subprocess.DEVNULL).decode()
             if "/" not in out:
                 return False
 
             line = out.strip().split("\n")[0]
             modem_index = line.split("/")[-1].split()[0]
 
-            subprocess.call(["mmcli", "-m", modem_index, "--location-enable-gps-nmea"])
+            # FIX: Only enable GPS ONCE, not every second!
+            if not self._gps_enabled:
+                result = subprocess.call(
+                    ["mmcli", "-m", modem_index, "--location-enable-gps-nmea"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                if result == 0:
+                    self._gps_enabled = True
+                    logger.log("INFO", f"Modem GPS location gathering enabled on modem {modem_index}")
+                else:
+                    return False
 
+            # Get current location (fast, doesn't spawn processes)
             loc = subprocess.check_output(
-                ["mmcli", "-m", modem_index, "--location-get"]
+                ["mmcli", "-m", modem_index, "--location-get"],
+                stderr=subprocess.DEVNULL
             ).decode()
 
             lat = self._extract("latitude", loc)
@@ -103,6 +118,8 @@ class GPSWorker:
             self.update_gps(float(lat), float(lon), float(alt or 0), float(spd or 0), True)
             return True
         except:
+            # If modem disconnects, reset the flag
+            self._gps_enabled = False
             return False
 
     # -------------------------------------------------------------
