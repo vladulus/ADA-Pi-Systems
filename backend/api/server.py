@@ -219,9 +219,7 @@ def create_app(modules, storage, ota_manager):
     @app.get("/api/gps")
     @require_auth
     def gps_status():
-        status = app.modules["gps"].read_status()
-        logger.log("DEBUG", f"API GPS endpoint: module_id={id(app.modules['gps'])}, status={status}")
-        return ok(status)
+        return ok(app.modules["gps"].read_status())
 
     @app.post("/api/gps/unit")
     @require_auth
