@@ -419,21 +419,13 @@ def create_app(modules, storage, ota_manager):
         else:
             return jsonify({"error": "Frontend not found", "path": frontend_dir}), 404
     
-    @app.route("/static/css/<path:filename>")
-    def serve_css(filename):
-        """Serve CSS files"""
+    @app.route("/static/<path:path>")
+    def serve_static(path):
+        """Serve static files (CSS, JS)"""
         from flask import send_from_directory
         import os
-        css_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "frontend", "css")
-        return send_from_directory(css_dir, filename)
-    
-    @app.route("/static/js/<path:filename>")
-    def serve_js(filename):
-        """Serve JS files"""
-        from flask import send_from_directory
-        import os
-        js_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "frontend", "js")
-        return send_from_directory(js_dir, filename)
+        frontend_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "frontend")
+        return send_from_directory(frontend_dir, path)
 
     return app
 

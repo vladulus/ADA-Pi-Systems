@@ -16,8 +16,8 @@ class AdaPiApp {
         this.connectWebSocket();
         this.loadPage('dashboard');
         
-        // Poll API every 10 seconds as backup
-        setInterval(() => this.refreshData(), 10000);
+        // Poll API every 5 seconds as backup
+        setInterval(() => this.refreshData(), 5000);
     }
     
     // Navigation
@@ -86,26 +86,27 @@ class AdaPiApp {
         this.ws = new WebSocket(this.wsUrl);
         
         this.ws.onopen = () => {
-            console.log('WebSocket connected');
+            console.log('✓ WebSocket connected successfully');
             this.updateConnectionStatus(true);
         };
         
         this.ws.onmessage = (event) => {
             try {
                 const message = JSON.parse(event.data);
+                console.log('WebSocket received:', message);
                 this.handleWebSocketMessage(message);
             } catch(e) {
-                console.error('WebSocket message parse error:', e);
+                console.error('WebSocket message parse error:', e, 'Raw:', event.data);
             }
         };
         
         this.ws.onerror = (error) => {
-            console.error('WebSocket error:', error);
+            console.error('✗ WebSocket error:', error);
             this.updateConnectionStatus(false);
         };
         
         this.ws.onclose = () => {
-            console.log('WebSocket closed, reconnecting...');
+            console.log('WebSocket closed, will reconnect in 3 seconds...');
             this.updateConnectionStatus(false);
             setTimeout(() => this.connectWebSocket(), 3000);
         };
@@ -114,9 +115,29 @@ class AdaPiApp {
     handleWebSocketMessage(message) {
         const { event, payload } = message;
         
-        // Store data
-        if (event) {
+        // Map WebSocket events to data keys that match the render functions
+        const eventMapping = {
+            'gps_update': 'gps',
+            'system_update': 'system',
+            'ups_update': 'ups',
+            'network_update': 'network',
+            'modem_update': 'modem',
+            'obd_update': 'obd',
+            'bt_update': 'bluetooth',
+            'bluetooth_update': 'bluetooth',
+            'tacho_update': 'tacho',
+            'fan_update': 'fan',
+            'logs_update': 'logs'
+        };
+        
+        // Store data with the correct key
+        if (event && eventMapping[event]) {
+            this.data[eventMapping[event]] = payload;
+            console.log(`WebSocket: ${event} →`, payload);
+        } else if (event) {
+            // Store with original event name if no mapping exists
             this.data[event] = payload;
+            console.log(`WebSocket: ${event} (unmapped) →`, payload);
         }
         
         // Update current page if relevant
@@ -139,8 +160,11 @@ class AdaPiApp {
     // API Calls
     async apiGet(endpoint) {
         try {
+            console.log(`API GET: ${endpoint}`);
             const response = await fetch(`${this.apiUrl}${endpoint}`);
-            return await response.json();
+            const data = await response.json();
+            console.log(`API GET ${endpoint} →`, data);
+            return data;
         } catch(e) {
             console.error('API GET error:', endpoint, e);
             return null;

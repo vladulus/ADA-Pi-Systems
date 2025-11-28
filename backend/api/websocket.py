@@ -16,7 +16,7 @@ class WebSocketServer:
         self.loop = None
 
     # ------------------------------------------------------------
-    async def handler(self, websocket):
+    async def handler(self, websocket, path):
         # new client connected
         self.clients.add(websocket)
         logger.log("INFO", f"WebSocket client connected. {len(self.clients)} total")
@@ -62,18 +62,12 @@ class WebSocketServer:
         """
         logger.log("INFO", f"Starting WebSocket server on ws://{self.host}:{self.port}")
 
-        async def run_server():
-            async with websockets.serve(self.handler, self.host, self.port):
-                logger.log("INFO", "WebSocket server bound to port successfully")
-                await asyncio.Future()  # run forever
-        
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
-        
-        try:
-            self.loop.run_until_complete(run_server())
-        except Exception as e:
-            logger.log("ERROR", f"WebSocket server failed: {e}")
+
+        server = websockets.serve(self.handler, self.host, self.port)
+        self.loop.run_until_complete(server)
+        self.loop.run_forever()
 
     # ------------------------------------------------------------
     def stop(self):

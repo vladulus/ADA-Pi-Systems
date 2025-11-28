@@ -6,7 +6,6 @@ import os
 import time
 from logger import logger
 from engine.at_engine import ATCommandEngine
-from ipc.router import router
 
 
 class ModemWorker:
@@ -58,9 +57,6 @@ class ModemWorker:
                 data["error"] = None
                 data["at_port"] = self.module.at_port
                 self.module.update(data)
-
-                # Publish to WebSocket
-                router.publish("modem_update", data)
 
             except Exception as e:
                 logger.log("ERROR", f"ModemWorker crash: {e}")

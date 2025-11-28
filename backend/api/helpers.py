@@ -47,30 +47,9 @@ def is_local_request():
       - 127.0.0.1
       - ::1
       - localhost
-      - 192.168.x.x (local network)
-      - 10.x.x.x (local network)
-      - 172.16-31.x.x (local network)
     """
     host = request.remote_addr
-    
-    # Localhost
-    if host in ["127.0.0.1", "::1", "localhost"]:
-        return True
-    
-    # Private network ranges
-    if host.startswith("192.168.") or host.startswith("10."):
-        return True
-    
-    # 172.16.0.0 - 172.31.255.255
-    if host.startswith("172."):
-        try:
-            second_octet = int(host.split(".")[1])
-            if 16 <= second_octet <= 31:
-                return True
-        except:
-            pass
-    
-    return False
+    return host in ["127.0.0.1", "::1", "localhost"]
 
 
 # ------------------------------------------------------------
