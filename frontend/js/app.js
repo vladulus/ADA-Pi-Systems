@@ -296,10 +296,10 @@ class AdaPiApp {
             content.innerHTML = this.renderModem();
             break;
         case 'bluetooth':
-            content.innerHTML = this.renderTacho();
+            content.innerHTML = this.renderBluetooth();
             break;
         case 'tacho':
-            content.innerHTML = this.renderTachograph();
+            content.innerHTML = this.renderTacho();
             break;
         case 'logs':
             content.innerHTML = this.renderLogs();
