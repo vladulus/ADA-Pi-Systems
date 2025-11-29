@@ -14,8 +14,8 @@ class AdaPiApp {
         this.authApiUrl = 'https://www.adasystems.uk/api';
         this.jwtToken = sessionStorage.getItem('ada_pi_token');
         this.userData = null;
-        this.isAuthenticated = !!this.jwtToken;
-        
+        this.isAuthenticated = false; // Always false until validateToken() runs
+     
         this.init();
     }
     
@@ -25,10 +25,16 @@ class AdaPiApp {
         // Validate existing token if present
         if (this.jwtToken) {
             const isValid = await this.validateToken();
-            if (!isValid) {
-                this.logout(false); // Silent logout
+            if (isValid) {
+                this.isAuthenticated = true;
+                this.userData = JSON.parse(sessionStorage.getItem('ada_pi_user') || "null");
+            }else{
+                this.jwtToken = null;
+                this.userData = null;
                 this.isAuthenticated = false;
-            }
+                sessionStorage.removeItem('ada_pi_token');
+                sessionStorage.removeItem('ada_pi_user');
+            } 
         }
         
         this.setupNavigation();
@@ -203,8 +209,19 @@ class AdaPiApp {
             
             if (response.status === 401) {
                 console.log('401 Unauthorized - token expired or invalid');
-                this.logout();
+
+                // Fully clear session
+                this.jwtToken = null;
+                this.userData = null;
+                this.isAuthenticated = false;
+                sessionStorage.removeItem('ada_pi_token');
+                sessionStorage.removeItem('ada_pi_user');
+
+                // Redirect to login (load dashboard → login will show)
+                this.loadPage('dashboard');
+
                 return null;
+
             }
             
             const data = await response.json();
@@ -230,8 +247,19 @@ class AdaPiApp {
             
             if (response.status === 401) {
                 console.log('401 Unauthorized - token expired or invalid');
-                this.logout();
+
+                // Fully clear session
+                this.jwtToken = null;
+                this.userData = null;
+                this.isAuthenticated = false;
+                sessionStorage.removeItem('ada_pi_token');
+                sessionStorage.removeItem('ada_pi_user');
+
+                // Redirect to login (load dashboard → login will show)
+                this.loadPage('dashboard');
+
                 return null;
+
             }
             
             return await response.json();
