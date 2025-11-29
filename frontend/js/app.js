@@ -16,7 +16,7 @@ class AdaPiApp {
         this.authHeader = null;
         this.isAuthenticated = false;
         
-        // Hardcoded admin credentials (only for you)
+        // Hardcoded admin credentials (matches backend config.json)
         this.adminUsername = 'adasystem_vlad';
         this.adminPassword = '&D1i$QwG86ollton';
         

@@ -1,0 +1,31 @@
+{
+  "device_id": "ada-pi-001",
+  "api": {
+    "host": "0.0.0.0",
+    "port": 8000
+  },
+  "websocket": {
+    "host": "0.0.0.0",
+    "port": 9000
+  },
+  "auth": {
+    "username": "adasystem_vlad",
+    "password": "&D1i$QwG86ollton"
+  },
+  "gps": {
+    "unit_mode": "auto",
+    "port": "/dev/ttyUSB1"
+  },
+  "ups": {
+    "enabled": true,
+    "i2c_address": "0x36"
+  },
+  "modem": {
+    "enabled": true,
+    "apn": "internet"
+  },
+  "cloud": {
+    "enabled": false,
+    "url": ""
+  }
+}
