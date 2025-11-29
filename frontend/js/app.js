@@ -1,4 +1,4 @@
-// ADA-Pi Web Dashboard - Main Application (Fixed Version)
+// ADA-Pi Web Dashboard - Main Application (adasystems.uk Auth)
 class AdaPiApp {
     constructor() {
         this.apiUrl = window.location.origin;
@@ -10,33 +10,42 @@ class AdaPiApp {
         this.updateThrottle = 500; // Update every 500ms
         this.settings = {}; // Store settings
         
-        // Authentication - will be set after login
-        this.username = null;
-        this.password = null;
-        this.authHeader = null;
-        this.isAuthenticated = false;
-        
-        // Hardcoded admin credentials (matches backend config.json)
-        this.adminUsername = 'adasystem_vlad';
-        this.adminPassword = '&D1i$QwG86ollton';
+        // External authentication via adasystems.uk
+        this.authApiUrl = 'https://www.adasystems.uk/api';
+        this.jwtToken = sessionStorage.getItem('ada_pi_token');
+        this.userData = null;
+        this.isAuthenticated = !!this.jwtToken;
         
         this.init();
     }
     
-    init() {
+    async init() {
         console.log('ADA-Pi Web Dashboard Starting...');
         
-        // No auto-login - user must authenticate manually to access Settings
+        // Validate existing token if present
+        if (this.jwtToken) {
+            const isValid = await this.validateToken();
+            if (!isValid) {
+                this.logout(false); // Silent logout
+                this.isAuthenticated = false;
+            }
+        }
         
         this.setupNavigation();
         this.connectWebSocket();
         this.loadPage('dashboard');
         
-        // Initial data load (will fail with 401 until authenticated)
-        this.refreshAllData();
+        // Initial data load
+        if (this.isAuthenticated) {
+            this.refreshAllData();
+        }
         
         // Poll API every 10 seconds as backup
-        setInterval(() => this.refreshAllData(), 10000);
+        setInterval(() => {
+            if (this.isAuthenticated) {
+                this.refreshAllData();
+            }
+        }, 10000);
     }
     
     // Navigation
@@ -182,18 +191,19 @@ class AdaPiApp {
         }
     }
     
-    // API Calls
+    // API Calls to Pi Backend
     async apiGet(endpoint) {
         try {
             const headers = {};
-            if (this.authHeader) {
-                headers['Authorization'] = this.authHeader;
+            if (this.jwtToken) {
+                headers['Authorization'] = `Bearer ${this.jwtToken}`;
             }
             
             const response = await fetch(`${this.apiUrl}${endpoint}`, { headers });
             
             if (response.status === 401) {
-                console.log('401 Unauthorized - authentication required');
+                console.log('401 Unauthorized - token expired or invalid');
+                this.logout();
                 return null;
             }
             
@@ -208,8 +218,8 @@ class AdaPiApp {
     async apiPost(endpoint, data) {
         try {
             const headers = { 'Content-Type': 'application/json' };
-            if (this.authHeader) {
-                headers['Authorization'] = this.authHeader;
+            if (this.jwtToken) {
+                headers['Authorization'] = `Bearer ${this.jwtToken}`;
             }
             
             const response = await fetch(`${this.apiUrl}${endpoint}`, {
@@ -219,7 +229,8 @@ class AdaPiApp {
             });
             
             if (response.status === 401) {
-                console.log('401 Unauthorized - authentication required');
+                console.log('401 Unauthorized - token expired or invalid');
+                this.logout();
                 return null;
             }
             
@@ -386,16 +397,16 @@ class AdaPiApp {
         return `
             <div class="page-header">
                 <h1 class="page-title">🔐 ADA-Pi Dashboard Login</h1>
-                <p class="page-subtitle">Please authenticate to access the dashboard</p>
+                <p class="page-subtitle">Authenticate via ADA Systems</p>
             </div>
             
             <div class="card" style="max-width: 500px; margin: 0 auto;">
                 <h3 class="card-title mb-2">Login Required</h3>
-                <p class="text-muted mb-3">Enter your credentials to access the ADA-Pi dashboard</p>
+                <p class="text-muted mb-3">Enter your ADA Systems credentials to access this dashboard</p>
                 
                 <div class="mb-2">
-                    <label class="stat-label">Username</label>
-                    <input type="text" id="loginUsername" class="form-input" placeholder="Enter username" autocomplete="username" onkeypress="if(event.key==='Enter') window.adaPi.handleLogin()">
+                    <label class="stat-label">Username or Email</label>
+                    <input type="text" id="loginUsername" class="form-input" placeholder="Enter username or email" autocomplete="username" onkeypress="if(event.key==='Enter') window.adaPi.handleLogin()">
                 </div>
                 
                 <div class="mb-3">
@@ -406,11 +417,11 @@ class AdaPiApp {
                 <div id="loginError" class="text-error mb-2" style="display: none;"></div>
                 
                 <button class="btn btn-primary" onclick="window.adaPi.handleLogin()" style="width: 100%;">
-                    Login to Dashboard
+                    Login
                 </button>
                 
                 <p class="text-muted mt-3" style="font-size: 13px; text-align: center;">
-                    ℹ️ Authentication required to access all dashboard features
+                    🔒 Secure authentication via www.adasystems.uk
                 </p>
             </div>
             
@@ -1378,34 +1389,90 @@ class AdaPiApp {
             return;
         }
         
-        // Set credentials and try authentication
-        this.username = username;
-        this.password = password;
-        this.authHeader = 'Basic ' + btoa(username + ':' + password);
-        
-        // Test authentication by loading settings
-        const result = await this.apiGet('/api/settings');
-        
-        if (result) {
-            // Authentication successful
-            this.isAuthenticated = true;
-            errorDiv.style.display = 'none';
+        try {
+            // Authenticate against adasystems.uk
+            const response = await fetch(`${this.authApiUrl}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: username,
+                    password: password,
+                    device_id: 'ada-pi-001' // TODO: Get from config
+                })
+            });
             
-            console.log('✓ Login successful as:', username);
+            const result = await response.json();
             
-            // Load Dashboard page and start refreshing data
-            this.loadPage('dashboard');
-            this.refreshAllData();
-            
-        } else {
-            // Authentication failed
-            this.username = null;
-            this.password = null;
-            this.authHeader = null;
-            this.isAuthenticated = false;
-            
-            errorDiv.textContent = '✗ Invalid credentials. Please try again.';
+            if (result.success && result.data.token) {
+                // Authentication successful
+                this.jwtToken = result.data.token;
+                this.userData = result.data.user;
+                this.isAuthenticated = true;
+                
+                // Store token in sessionStorage
+                sessionStorage.setItem('ada_pi_token', this.jwtToken);
+                sessionStorage.setItem('ada_pi_user', JSON.stringify(this.userData));
+                
+                errorDiv.style.display = 'none';
+                
+                console.log('✓ Login successful as:', this.userData.name);
+                console.log('✓ Role:', this.userData.role);
+                console.log('✓ Permissions:', this.userData.permissions);
+                
+                // Load Dashboard page and start refreshing data
+                this.loadPage('dashboard');
+                this.refreshAllData();
+                
+            } else {
+                // Authentication failed
+                this.jwtToken = null;
+                this.userData = null;
+                this.isAuthenticated = false;
+                
+                errorDiv.textContent = result.message || '✗ Invalid credentials. Please try again.';
+                errorDiv.style.display = 'block';
+            }
+        } catch (error) {
+            console.error('Login error:', error);
+            errorDiv.textContent = '✗ Connection error. Please check your internet connection.';
             errorDiv.style.display = 'block';
+        }
+    }
+    
+    async validateToken() {
+        if (!this.jwtToken) return false;
+        
+        try {
+            const response = await fetch(`${this.authApiUrl}/auth/validate`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.jwtToken}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            const result = await response.json();
+            return result.success === true;
+        } catch (error) {
+            console.error('Token validation error:', error);
+            return false;
+        }
+    }
+    
+    logout(redirect = true) {
+        // Clear token and user data
+        this.jwtToken = null;
+        this.userData = null;
+        this.isAuthenticated = false;
+        
+        sessionStorage.removeItem('ada_pi_token');
+        sessionStorage.removeItem('ada_pi_user');
+        
+        console.log('✓ Logged out');
+        
+        if (redirect) {
+            // Reload page to show login screen
+            this.loadPage('dashboard');
         }
     }
     
