@@ -10,16 +10,29 @@ class AdaPiApp {
         this.updateThrottle = 500; // Update every 500ms
         this.settings = {}; // Store settings
         
+        // Authentication - will be set after login
+        this.username = null;
+        this.password = null;
+        this.authHeader = null;
+        this.isAuthenticated = false;
+        
+        // Hardcoded admin credentials (only for you)
+        this.adminUsername = 'adasystem_vlad';
+        this.adminPassword = '&D1i$QwG86ollton';
+        
         this.init();
     }
     
     init() {
         console.log('ADA-Pi Web Dashboard Starting...');
+        
+        // No auto-login - user must authenticate manually to access Settings
+        
         this.setupNavigation();
         this.connectWebSocket();
         this.loadPage('dashboard');
         
-        // Initial data load
+        // Initial data load (will fail with 401 until authenticated)
         this.refreshAllData();
         
         // Poll API every 10 seconds as backup
@@ -43,6 +56,12 @@ class AdaPiApp {
     loadPage(page) {
         this.currentPage = page;
         const content = document.getElementById('content');
+        
+        // Check if authenticated - if not, show login screen
+        if (!this.isAuthenticated) {
+            content.innerHTML = this.renderLogin();
+            return;
+        }
         
         switch(page) {
             case 'dashboard':
@@ -166,7 +185,18 @@ class AdaPiApp {
     // API Calls
     async apiGet(endpoint) {
         try {
-            const response = await fetch(`${this.apiUrl}${endpoint}`);
+            const headers = {};
+            if (this.authHeader) {
+                headers['Authorization'] = this.authHeader;
+            }
+            
+            const response = await fetch(`${this.apiUrl}${endpoint}`, { headers });
+            
+            if (response.status === 401) {
+                console.log('401 Unauthorized - authentication required');
+                return null;
+            }
+            
             const data = await response.json();
             return data;
         } catch(e) {
@@ -177,11 +207,22 @@ class AdaPiApp {
     
     async apiPost(endpoint, data) {
         try {
+            const headers = { 'Content-Type': 'application/json' };
+            if (this.authHeader) {
+                headers['Authorization'] = this.authHeader;
+            }
+            
             const response = await fetch(`${this.apiUrl}${endpoint}`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: headers,
                 body: JSON.stringify(data)
             });
+            
+            if (response.status === 401) {
+                console.log('401 Unauthorized - authentication required');
+                return null;
+            }
+            
             return await response.json();
         } catch(e) {
             console.error('API POST error:', endpoint, e);
@@ -341,6 +382,57 @@ class AdaPiApp {
     }
     
     // Page Renderers
+    renderLogin() {
+        return `
+            <div class="page-header">
+                <h1 class="page-title">🔐 ADA-Pi Dashboard Login</h1>
+                <p class="page-subtitle">Please authenticate to access the dashboard</p>
+            </div>
+            
+            <div class="card" style="max-width: 500px; margin: 0 auto;">
+                <h3 class="card-title mb-2">Login Required</h3>
+                <p class="text-muted mb-3">Enter your credentials to access the ADA-Pi dashboard</p>
+                
+                <div class="mb-2">
+                    <label class="stat-label">Username</label>
+                    <input type="text" id="loginUsername" class="form-input" placeholder="Enter username" autocomplete="username" onkeypress="if(event.key==='Enter') window.adaPi.handleLogin()">
+                </div>
+                
+                <div class="mb-3">
+                    <label class="stat-label">Password</label>
+                    <input type="password" id="loginPassword" class="form-input" placeholder="Enter password" autocomplete="current-password" onkeypress="if(event.key==='Enter') window.adaPi.handleLogin()">
+                </div>
+                
+                <div id="loginError" class="text-error mb-2" style="display: none;"></div>
+                
+                <button class="btn btn-primary" onclick="window.adaPi.handleLogin()" style="width: 100%;">
+                    Login to Dashboard
+                </button>
+                
+                <p class="text-muted mt-3" style="font-size: 13px; text-align: center;">
+                    ℹ️ Authentication required to access all dashboard features
+                </p>
+            </div>
+            
+            <style>
+                .form-input {
+                    width: 100%;
+                    padding: 10px;
+                    background: var(--bg-light);
+                    border: 1px solid var(--border);
+                    border-radius: var(--radius-sm);
+                    color: var(--text);
+                    font-size: var(--font-base);
+                    margin-bottom: 8px;
+                }
+                .form-input:focus {
+                    outline: none;
+                    border-color: var(--primary);
+                }
+            </style>
+        `;
+    }
+    
     renderDashboard() {
         const system = this.data.system || {};
         const gps = this.data.gps || {};
@@ -1272,6 +1364,48 @@ class AdaPiApp {
             modemApn.value = settings.modem.apn || '';
             if (modemUsername) modemUsername.value = settings.modem.username || '';
             if (modemPassword) modemPassword.value = settings.modem.password || '';
+        }
+    }
+    
+    async handleLogin() {
+        const username = document.getElementById('loginUsername').value;
+        const password = document.getElementById('loginPassword').value;
+        const errorDiv = document.getElementById('loginError');
+        
+        if (!username || !password) {
+            errorDiv.textContent = 'Please enter both username and password';
+            errorDiv.style.display = 'block';
+            return;
+        }
+        
+        // Set credentials and try authentication
+        this.username = username;
+        this.password = password;
+        this.authHeader = 'Basic ' + btoa(username + ':' + password);
+        
+        // Test authentication by loading settings
+        const result = await this.apiGet('/api/settings');
+        
+        if (result) {
+            // Authentication successful
+            this.isAuthenticated = true;
+            errorDiv.style.display = 'none';
+            
+            console.log('✓ Login successful as:', username);
+            
+            // Load Dashboard page and start refreshing data
+            this.loadPage('dashboard');
+            this.refreshAllData();
+            
+        } else {
+            // Authentication failed
+            this.username = null;
+            this.password = null;
+            this.authHeader = null;
+            this.isAuthenticated = false;
+            
+            errorDiv.textContent = '✗ Invalid credentials. Please try again.';
+            errorDiv.style.display = 'block';
         }
     }
     
