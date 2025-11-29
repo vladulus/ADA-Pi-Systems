@@ -1,4 +1,4 @@
-// ADA-Pi Web Dashboard - Main Application
+// ADA-Pi Web Dashboard - Main Application (Fixed Version)
 class AdaPiApp {
     constructor() {
         this.apiUrl = window.location.origin;
@@ -7,7 +7,8 @@ class AdaPiApp {
         this.currentPage = 'dashboard';
         this.data = {};
         this.lastUpdate = 0;
-        this.updateThrottle = 1000; // Only update once per second
+        this.updateThrottle = 500; // Update every 500ms
+        this.settings = {}; // Store settings
         
         this.init();
     }
@@ -18,8 +19,11 @@ class AdaPiApp {
         this.connectWebSocket();
         this.loadPage('dashboard');
         
-        // Poll API every 30 seconds as backup (reduced from 5s to prevent overload)
-        setInterval(() => this.refreshData(), 30000);
+        // Initial data load
+        this.refreshAllData();
+        
+        // Poll API every 10 seconds as backup
+        setInterval(() => this.refreshAllData(), 10000);
     }
     
     // Navigation
@@ -74,13 +78,13 @@ class AdaPiApp {
                 break;
             case 'settings':
                 content.innerHTML = this.renderSettings();
+                this.setupSettingsHandlers();
+                this.loadSettings();
                 break;
         }
         
-        // Initial data load only when page first loads
-        if (!this.data[page]) {
-            this.refreshData();
-        }
+        // Load data for current page
+        this.refreshCurrentPageData();
     }
     
     // WebSocket Connection
@@ -97,10 +101,9 @@ class AdaPiApp {
         this.ws.onmessage = (event) => {
             try {
                 const message = JSON.parse(event.data);
-                console.log('WebSocket received:', message);
                 this.handleWebSocketMessage(message);
             } catch(e) {
-                console.error('WebSocket message parse error:', e, 'Raw:', event.data);
+                console.error('WebSocket message parse error:', e);
             }
         };
         
@@ -110,7 +113,7 @@ class AdaPiApp {
         };
         
         this.ws.onclose = () => {
-            console.log('WebSocket closed, will reconnect in 3 seconds...');
+            console.log('WebSocket closed, reconnecting...');
             this.updateConnectionStatus(false);
             setTimeout(() => this.connectWebSocket(), 3000);
         };
@@ -119,7 +122,7 @@ class AdaPiApp {
     handleWebSocketMessage(message) {
         const { event, payload } = message;
         
-        // Map WebSocket events to data keys that match the render functions
+        // Map WebSocket events to data keys
         const eventMapping = {
             'gps_update': 'gps',
             'system_update': 'system',
@@ -134,17 +137,12 @@ class AdaPiApp {
             'logs_update': 'logs'
         };
         
-        // Store data with the correct key
         if (event && eventMapping[event]) {
             this.data[eventMapping[event]] = payload;
-            console.log(`WebSocket: ${event} →`, payload);
-        } else if (event) {
-            // Store with original event name if no mapping exists
-            this.data[event] = payload;
-            console.log(`WebSocket: ${event} (unmapped) →`, payload);
+            console.log(`WS: ${event} →`, payload);
         }
         
-        // Throttled update - only update once per second max
+        // Throttled update
         const now = Date.now();
         if (now - this.lastUpdate > this.updateThrottle) {
             this.lastUpdate = now;
@@ -168,10 +166,8 @@ class AdaPiApp {
     // API Calls
     async apiGet(endpoint) {
         try {
-            console.log(`API GET: ${endpoint}`);
             const response = await fetch(`${this.apiUrl}${endpoint}`);
             const data = await response.json();
-            console.log(`API GET ${endpoint} →`, data);
             return data;
         } catch(e) {
             console.error('API GET error:', endpoint, e);
@@ -193,16 +189,24 @@ class AdaPiApp {
         }
     }
     
-    async refreshData() {
-        // Fetch data based on current page
+    async refreshAllData() {
+        await Promise.all([
+            this.fetchSystemInfo(),
+            this.fetchGPS(),
+            this.fetchUPS(),
+            this.fetchNetwork(),
+            this.fetchModem(),
+            this.fetchBluetooth(),
+            this.fetchTacho(),
+            this.fetchOBD()
+        ]);
+        this.updateCurrentPage();
+    }
+    
+    async refreshCurrentPageData() {
         switch(this.currentPage) {
             case 'dashboard':
-                await Promise.all([
-                    this.fetchSystemInfo(),
-                    this.fetchGPS(),
-                    this.fetchUPS(),
-                    this.fetchNetwork()
-                ]);
+                await this.refreshAllData();
                 break;
             case 'gps':
                 await this.fetchGPS();
@@ -231,101 +235,108 @@ class AdaPiApp {
             case 'logs':
                 await this.loadLogs();
                 break;
+            case 'settings':
+                await this.loadSettings();
+                break;
         }
-        
         this.updateCurrentPage();
     }
     
     async fetchSystemInfo() {
         const data = await this.apiGet('/api/system/info');
-        if (data) this.data.system = data.data;
+        if (data && data.data) this.data.system = data.data;
     }
     
     async fetchGPS() {
         const data = await this.apiGet('/api/gps');
-        if (data) this.data.gps = data.data;
+        if (data && data.data) this.data.gps = data.data;
     }
     
     async fetchUPS() {
         const data = await this.apiGet('/api/ups');
-        if (data) this.data.ups = data.data;
+        if (data && data.data) this.data.ups = data.data;
     }
     
     async fetchNetwork() {
         const data = await this.apiGet('/api/network');
-        if (data) this.data.network = data.data;
+        if (data && data.data) this.data.network = data.data;
     }
 
     async fetchModem() {
         const data = await this.apiGet('/api/modem');
-        if (data) this.data.modem = data.data;
+        if (data && data.data) this.data.modem = data.data;
     }
 
     async fetchBluetooth() {
         const data = await this.apiGet('/api/bluetooth');
-        if (data) this.data.bluetooth = data.data;
+        if (data && data.data) this.data.bluetooth = data.data;
     }
 
     async fetchTacho() {
         const data = await this.apiGet('/api/tacho');
-        if (data) this.data.tacho = data.data;
+        if (data && data.data) this.data.tacho = data.data;
     }
 
     async fetchOBD() {
         const data = await this.apiGet('/api/obd');
-        if (data) this.data.obd = data.data;
+        if (data && data.data) this.data.obd = data.data;
     }
     
     async loadLogs() {
-        const data = await this.apiGet('/api/logs/recent?limit=100');
+        const data = await this.apiGet('/api/logs/live');
+        if (data && data.data && data.data.recent) {
+            this.renderLogsTable(data.data.recent);
+        }
+    }
+    
+    async loadSettings() {
+        const data = await this.apiGet('/api/settings');
         if (data && data.data) {
-            this.renderLogsTable(data.data);
+            this.settings = data.data;
+            this.populateSettings();
         }
     }
     
     updateCurrentPage() {
-    // Re-render current page with updated data WITHOUT calling loadPage
-    const content = document.getElementById('content');
-    const scrollPosition = content.scrollTop;
-    
-    // Render directly based on current page
-    switch(this.currentPage) {
-        case 'dashboard':
-            content.innerHTML = this.renderDashboard();
-            break;
-        case 'gps':
-            content.innerHTML = this.renderGPS();
-            break;
-        case 'obd':
-            content.innerHTML = this.renderOBD();
-            break;
-        case 'system':
-            content.innerHTML = this.renderSystem();
-            break;
-        case 'ups':
-            content.innerHTML = this.renderUPS();
-            break;
-        case 'network':
-            content.innerHTML = this.renderNetwork();
-            break;
-        case 'modem':
-            content.innerHTML = this.renderModem();
-            break;
-        case 'bluetooth':
-            content.innerHTML = this.renderBluetooth();
-            break;
-        case 'tacho':
-            content.innerHTML = this.renderTacho();
-            break;
-        case 'logs':
-            content.innerHTML = this.renderLogs();
-            this.loadLogs();
-            break;
-        case 'settings':
-            content.innerHTML = this.renderSettings();
-            break;
-         }
-            
+        const content = document.getElementById('content');
+        const scrollPosition = content.scrollTop;
+        
+        switch(this.currentPage) {
+            case 'dashboard':
+                content.innerHTML = this.renderDashboard();
+                break;
+            case 'gps':
+                content.innerHTML = this.renderGPS();
+                break;
+            case 'obd':
+                content.innerHTML = this.renderOBD();
+                break;
+            case 'system':
+                content.innerHTML = this.renderSystem();
+                break;
+            case 'ups':
+                content.innerHTML = this.renderUPS();
+                break;
+            case 'network':
+                content.innerHTML = this.renderNetwork();
+                break;
+            case 'modem':
+                content.innerHTML = this.renderModem();
+                break;
+            case 'bluetooth':
+                content.innerHTML = this.renderBluetooth();
+                break;
+            case 'tacho':
+                content.innerHTML = this.renderTacho();
+                break;
+            case 'logs':
+                // Don't re-render logs page
+                break;
+            case 'settings':
+                // Don't re-render settings page
+                break;
+        }
+        
         content.scrollTop = scrollPosition;
     }
     
@@ -348,8 +359,8 @@ class AdaPiApp {
                         <span class="card-icon">🗺️</span>
                         <span class="card-title">GPS</span>
                     </div>
-                    <div class="stat-value text-primary">${gps.speed || 0} km/h</div>
-                    <div class="stat-label">${gps.satellites || 0} satellites</div>
+                    <div class="stat-value text-primary">${gps.speed || 0} ${gps.unit || 'km/h'}</div>
+                    <div class="stat-label">${gps.satellites || 0} satellites • ${gps.fix ? 'Fixed' : 'No Fix'}</div>
                 </div>
                 
                 <div class="stat-card">
@@ -357,8 +368,8 @@ class AdaPiApp {
                         <span class="card-icon">🔋</span>
                         <span class="card-title">Battery</span>
                     </div>
-                    <div class="stat-value ${this.getBatteryColor(ups.battery_percent)}">${ups.battery_percent || 0}%</div>
-                    <div class="stat-label">${ups.charging ? 'Charging' : 'Discharging'}</div>
+                    <div class="stat-value ${this.getBatteryColor(ups.percent)}">${ups.percent || 0}%</div>
+                    <div class="stat-label">${ups.charging ? '⚡ Charging' : '🔌 Discharging'} • ${(ups.voltage || 0).toFixed(2)}V</div>
                 </div>
                 
                 <div class="stat-card">
@@ -366,8 +377,8 @@ class AdaPiApp {
                         <span class="card-icon">💻</span>
                         <span class="card-title">CPU</span>
                     </div>
-                    <div class="stat-value text-info">${(system.cpu?.usage || 0).toFixed(1)}%</div>
-                    <div class="stat-label">${(system.cpu?.temp || 0).toFixed(1)}°C</div>
+                    <div class="stat-value text-info">${((system.cpu && system.cpu.usage) || 0).toFixed(1)}%</div>
+                    <div class="stat-label">${((system.cpu && system.cpu.temp) || 0).toFixed(1)}°C</div>
                 </div>
             </div>
             
@@ -377,28 +388,28 @@ class AdaPiApp {
                     <div class="mb-2">
                         <div class="flex-between mb-1">
                             <span>CPU Usage</span>
-                            <span>${(system.cpu?.usage || 0).toFixed(1)}%</span>
+                            <span>${((system.cpu && system.cpu.usage) || 0).toFixed(1)}%</span>
                         </div>
                         <div class="progress">
-                            <div class="progress-bar" style="width: ${system.cpu?.usage || 0}%"></div>
+                            <div class="progress-bar" style="width: ${(system.cpu && system.cpu.usage) || 0}%"></div>
                         </div>
                     </div>
                     <div class="mb-2">
                         <div class="flex-between mb-1">
                             <span>Memory</span>
-                            <span>${(system.memory?.percent || 0).toFixed(1)}%</span>
+                            <span>${((system.memory && system.memory.percent) || 0).toFixed(1)}%</span>
                         </div>
                         <div class="progress">
-                            <div class="progress-bar" style="width: ${system.memory?.percent || 0}%"></div>
+                            <div class="progress-bar" style="width: ${(system.memory && system.memory.percent) || 0}%"></div>
                         </div>
                     </div>
                     <div>
                         <div class="flex-between mb-1">
                             <span>Disk</span>
-                            <span>${(system.disk?.percent || 0).toFixed(1)}%</span>
+                            <span>${((system.disk && system.disk.percent) || 0).toFixed(1)}%</span>
                         </div>
                         <div class="progress">
-                            <div class="progress-bar" style="width: ${system.disk?.percent || 0}%"></div>
+                            <div class="progress-bar" style="width: ${(system.disk && system.disk.percent) || 0}%"></div>
                         </div>
                     </div>
                 </div>
@@ -406,19 +417,21 @@ class AdaPiApp {
                 <div class="card">
                     <h3 class="card-title mb-2">Network Status</h3>
                     <div class="flex-between mb-2">
-                        <span>Status</span>
-                        <span class="badge ${network.connected ? 'badge-success' : 'badge-error'}">
-                            ${network.connected ? 'Connected' : 'Disconnected'}
+                        <span>Active Interface</span>
+                        <span class="badge ${network.active !== 'none' ? 'badge-success' : 'badge-error'}">
+                            ${network.active || 'None'}
                         </span>
                     </div>
                     <div class="flex-between mb-2">
                         <span>IP Address</span>
                         <span>${network.ip || 'N/A'}</span>
                     </div>
+                    ${network.wifi && network.wifi.connected ? `
                     <div class="flex-between">
-                        <span>Interface</span>
-                        <span>${network.interface || 'N/A'}</span>
+                        <span>WiFi SSID</span>
+                        <span>${network.wifi.ssid || 'N/A'}</span>
                     </div>
+                    ` : ''}
                 </div>
             </div>
         `;
@@ -436,7 +449,7 @@ class AdaPiApp {
             <div class="grid grid-4 mb-3">
                 <div class="stat-card">
                     <div class="stat-label">Speed</div>
-                    <div class="stat-value text-primary">${gps.speed || 0} km/h</div>
+                    <div class="stat-value text-primary">${gps.speed || 0} ${gps.unit || 'km/h'}</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Satellites</div>
@@ -444,11 +457,11 @@ class AdaPiApp {
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Altitude</div>
-                    <div class="stat-value text-success">${gps.altitude || 0} m</div>
+                    <div class="stat-value text-success">${(gps.altitude || 0).toFixed(1)} m</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">HDOP</div>
-                    <div class="stat-value">${gps.hdop || 0}</div>
+                    <div class="stat-value">${(gps.hdop || 0).toFixed(2)}</div>
                 </div>
             </div>
             
@@ -457,11 +470,11 @@ class AdaPiApp {
                 <div class="grid grid-2">
                     <div>
                         <div class="stat-label">Latitude</div>
-                        <div class="stat-value">${gps.latitude || 0}</div>
+                        <div class="stat-value">${(gps.latitude || 0).toFixed(6)}</div>
                     </div>
                     <div>
                         <div class="stat-label">Longitude</div>
-                        <div class="stat-value">${gps.longitude || 0}</div>
+                        <div class="stat-value">${(gps.longitude || 0).toFixed(6)}</div>
                     </div>
                 </div>
             </div>
@@ -475,7 +488,11 @@ class AdaPiApp {
                     </tr>
                     <tr>
                         <td>Heading</td>
-                        <td>${gps.heading || 0}°</td>
+                        <td>${(gps.heading || 0).toFixed(1)}°</td>
+                    </tr>
+                    <tr>
+                        <td>Unit Mode</td>
+                        <td>${gps.unit || 'km/h'}</td>
                     </tr>
                     <tr>
                         <td>Timestamp</td>
@@ -488,6 +505,10 @@ class AdaPiApp {
     
     renderSystem() {
         const system = this.data.system || {};
+        const cpu = system.cpu || {};
+        const memory = system.memory || {};
+        const disk = system.disk || {};
+        const gpu = system.gpu || {};
         
         return `
             <div class="page-header">
@@ -498,18 +519,18 @@ class AdaPiApp {
             <div class="grid grid-3 mb-3">
                 <div class="stat-card">
                     <div class="stat-label">CPU Usage</div>
-                    <div class="stat-value text-primary">${(system.cpu?.usage || 0).toFixed(1)}%</div>
-                    <div class="stat-label">${(system.cpu?.temp || 0).toFixed(1)}°C</div>
+                    <div class="stat-value text-primary">${(cpu.usage || 0).toFixed(1)}%</div>
+                    <div class="stat-label">${(cpu.temp || 0).toFixed(1)}°C • ${cpu.freq || 0} MHz</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Memory</div>
-                    <div class="stat-value text-info">${(system.memory?.percent || 0).toFixed(1)}%</div>
-                    <div class="stat-label">${this.formatBytes(system.memory?.used || 0)} / ${this.formatBytes(system.memory?.total || 0)}</div>
+                    <div class="stat-value text-info">${(memory.percent || 0).toFixed(1)}%</div>
+                    <div class="stat-label">${this.formatBytes(memory.used || 0)} / ${this.formatBytes(memory.total || 0)}</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Disk</div>
-                    <div class="stat-value text-warning">${(system.disk?.percent || 0).toFixed(1)}%</div>
-                    <div class="stat-label">${this.formatBytes(system.disk?.used || 0)} / ${this.formatBytes(system.disk?.total || 0)}</div>
+                    <div class="stat-value text-warning">${(disk.percent || 0).toFixed(1)}%</div>
+                    <div class="stat-label">${this.formatBytes(disk.used || 0)} / ${this.formatBytes(disk.total || 0)}</div>
                 </div>
             </div>
             
@@ -532,6 +553,10 @@ class AdaPiApp {
                         <td>Load Average</td>
                         <td>${(system.load || [0,0,0]).join(', ')}</td>
                     </tr>
+                    <tr>
+                        <td>Throttled</td>
+                        <td><span class="badge ${system.throttled ? 'badge-warning' : 'badge-success'}">${system.throttled ? 'Yes' : 'No'}</span></td>
+                    </tr>
                 </table>
             </div>
             
@@ -540,11 +565,11 @@ class AdaPiApp {
                 <div class="grid grid-2">
                     <div>
                         <div class="stat-label">CPU</div>
-                        <div class="stat-value ${this.getTempColor(system.cpu?.temp)}">${(system.cpu?.temp || 0).toFixed(1)}°C</div>
+                        <div class="stat-value ${this.getTempColor(cpu.temp)}">${(cpu.temp || 0).toFixed(1)}°C</div>
                     </div>
                     <div>
                         <div class="stat-label">GPU</div>
-                        <div class="stat-value ${this.getTempColor(system.gpu?.temp)}">${(system.gpu?.temp || 0).toFixed(1)}°C</div>
+                        <div class="stat-value ${this.getTempColor(gpu.temp)}">${(gpu.temp || 0).toFixed(1)}°C</div>
                     </div>
                 </div>
             </div>
@@ -563,45 +588,49 @@ class AdaPiApp {
             <div class="grid grid-3 mb-3">
                 <div class="stat-card">
                     <div class="stat-label">Battery Level</div>
-                    <div class="stat-value ${this.getBatteryColor(ups.battery_percent)}">${ups.battery_percent || 0}%</div>
+                    <div class="stat-value ${this.getBatteryColor(ups.percent)}">${ups.percent || 0}%</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Voltage</div>
                     <div class="stat-value text-info">${(ups.voltage || 0).toFixed(2)}V</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-label">Current</div>
-                    <div class="stat-value text-primary">${(ups.current || 0).toFixed(2)}A</div>
+                    <div class="stat-label">Model</div>
+                    <div class="stat-value text-primary">${ups.model || 'Unknown'}</div>
                 </div>
             </div>
             
             <div class="card mb-3">
                 <h3 class="card-title mb-2">Battery Status</h3>
                 <div class="progress mb-2" style="height: 30px;">
-                    <div class="progress-bar" style="width: ${ups.battery_percent || 0}%"></div>
+                    <div class="progress-bar" style="width: ${ups.percent || 0}%"></div>
                 </div>
-                <div class="flex-between">
-                    <span>Status</span>
-                    <span class="badge ${ups.charging ? 'badge-success' : 'badge-warning'}">
-                        ${ups.charging ? 'Charging' : 'Discharging'}
-                    </span>
+                <div class="grid grid-2 mt-2">
+                    <div class="flex-between">
+                        <span>Status</span>
+                        <span class="badge ${ups.charging ? 'badge-success' : 'badge-warning'}">
+                            ${ups.charging ? '⚡ Charging' : '🔌 Discharging'}
+                        </span>
+                    </div>
+                    <div class="flex-between">
+                        <span>Input Power</span>
+                        <span class="badge ${ups.input_power ? 'badge-success' : 'badge-error'}">
+                            ${ups.input_power ? 'Connected' : 'Disconnected'}
+                        </span>
+                    </div>
                 </div>
             </div>
             
             <div class="card">
-                <h3 class="card-title mb-2">Power Details</h3>
+                <h3 class="card-title mb-2">UPS Information</h3>
                 <table class="table">
                     <tr>
-                        <td>Power</td>
-                        <td>${(ups.power || 0).toFixed(2)}W</td>
+                        <td>Model</td>
+                        <td>${ups.model || 'Auto-detect'}</td>
                     </tr>
                     <tr>
-                        <td>Capacity</td>
-                        <td>${ups.capacity || 0} mAh</td>
-                    </tr>
-                    <tr>
-                        <td>External Power</td>
-                        <td><span class="badge ${ups.external_power ? 'badge-success' : 'badge-error'}">${ups.external_power ? 'Connected' : 'Disconnected'}</span></td>
+                        <td>Last Updated</td>
+                        <td>${this.formatTimestamp(ups.updated)}</td>
                     </tr>
                 </table>
             </div>
@@ -610,6 +639,8 @@ class AdaPiApp {
     
     renderNetwork() {
         const network = this.data.network || {};
+        const wifi = network.wifi || {};
+        const ethernet = network.ethernet || {};
         
         return `
             <div class="page-header">
@@ -618,42 +649,66 @@ class AdaPiApp {
             </div>
             
             <div class="card mb-3">
-                <h3 class="card-title mb-2">Connection Status</h3>
+                <h3 class="card-title mb-2">Active Connection</h3>
                 <table class="table">
                     <tr>
-                        <td>Status</td>
-                        <td><span class="badge ${network.connected ? 'badge-success' : 'badge-error'}">${network.connected ? 'Connected' : 'Disconnected'}</span></td>
+                        <td>Active Interface</td>
+                        <td><span class="badge ${network.active !== 'none' ? 'badge-success' : 'badge-error'}">${network.active || 'None'}</span></td>
                     </tr>
                     <tr>
                         <td>IP Address</td>
                         <td>${network.ip || 'N/A'}</td>
                     </tr>
                     <tr>
-                        <td>Interface</td>
-                        <td>${network.interface || 'N/A'}</td>
-                    </tr>
-                    <tr>
-                        <td>Subnet Mask</td>
-                        <td>${network.netmask || 'N/A'}</td>
-                    </tr>
-                    <tr>
-                        <td>Gateway</td>
-                        <td>${network.gateway || 'N/A'}</td>
+                        <td>Last Updated</td>
+                        <td>${this.formatTimestamp(network.updated)}</td>
                     </tr>
                 </table>
             </div>
             
-            <div class="card">
-                <h3 class="card-title mb-2">Network Statistics</h3>
-                <div class="grid grid-2">
-                    <div>
-                        <div class="stat-label">Bytes Sent</div>
-                        <div class="stat-value text-primary">${this.formatBytes(network.bytes_sent || 0)}</div>
-                    </div>
-                    <div>
-                        <div class="stat-label">Bytes Received</div>
-                        <div class="stat-value text-info">${this.formatBytes(network.bytes_recv || 0)}</div>
-                    </div>
+            <div class="grid grid-2 mb-3">
+                <div class="card">
+                    <h3 class="card-title mb-2">WiFi</h3>
+                    <table class="table">
+                        <tr>
+                            <td>Status</td>
+                            <td><span class="badge ${wifi.connected ? 'badge-success' : 'badge-error'}">${wifi.connected ? 'Connected' : 'Disconnected'}</span></td>
+                        </tr>
+                        ${wifi.connected ? `
+                        <tr>
+                            <td>SSID</td>
+                            <td>${wifi.ssid || 'N/A'}</td>
+                        </tr>
+                        <tr>
+                            <td>Signal Strength</td>
+                            <td>${wifi.strength || 0}%</td>
+                        </tr>
+                        <tr>
+                            <td>Frequency</td>
+                            <td>${wifi.frequency || 0} MHz</td>
+                        </tr>
+                        <tr>
+                            <td>IP Address</td>
+                            <td>${wifi.ip || 'N/A'}</td>
+                        </tr>
+                        ` : ''}
+                    </table>
+                </div>
+                
+                <div class="card">
+                    <h3 class="card-title mb-2">Ethernet</h3>
+                    <table class="table">
+                        <tr>
+                            <td>Status</td>
+                            <td><span class="badge ${ethernet.connected ? 'badge-success' : 'badge-error'}">${ethernet.connected ? 'Connected' : 'Disconnected'}</span></td>
+                        </tr>
+                        ${ethernet.connected ? `
+                        <tr>
+                            <td>IP Address</td>
+                            <td>${ethernet.ip || 'N/A'}</td>
+                        </tr>
+                        ` : ''}
+                    </table>
                 </div>
             </div>
         `;
@@ -661,6 +716,7 @@ class AdaPiApp {
     
     renderModem() {
         const modem = this.data.modem || {};
+        const signal = modem.signal || {};
         
         return `
             <div class="page-header">
@@ -670,37 +726,70 @@ class AdaPiApp {
             
             <div class="grid grid-3 mb-3">
                 <div class="stat-card">
-                    <div class="stat-label">Signal Strength</div>
-                    <div class="stat-value text-success">${modem.signal_strength || 0}%</div>
-                </div>
-                <div class="stat-card">
                     <div class="stat-label">Network</div>
-                    <div class="stat-value text-info">${modem.network_type || 'N/A'}</div>
+                    <div class="stat-value text-info">${modem.network_mode || 'N/A'}</div>
+                    <div class="stat-label">${modem.band || 'Unknown Band'}</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Operator</div>
-                    <div class="stat-value">${modem.operator || 'N/A'}</div>
+                    <div class="stat-value text-primary">${modem.operator || 'N/A'}</div>
+                    <div class="stat-label">${modem.registration || 'Unknown'}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Signal</div>
+                    <div class="stat-value ${this.getSignalColor(signal.rssi)}">${signal.rssi || 'N/A'} dBm</div>
+                    <div class="stat-label">RSSI</div>
                 </div>
             </div>
             
-            <div class="card">
-                <h3 class="card-title mb-2">Modem Details</h3>
+            <div class="card mb-3">
+                <h3 class="card-title mb-2">Modem Information</h3>
                 <table class="table">
                     <tr>
                         <td>Status</td>
                         <td><span class="badge ${modem.connected ? 'badge-success' : 'badge-error'}">${modem.connected ? 'Connected' : 'Disconnected'}</span></td>
                     </tr>
                     <tr>
+                        <td>Brand</td>
+                        <td>${modem.brand || 'Unknown'}</td>
+                    </tr>
+                    <tr>
+                        <td>Model</td>
+                        <td>${modem.model || 'Unknown'}</td>
+                    </tr>
+                    <tr>
                         <td>IMEI</td>
                         <td>${modem.imei || 'N/A'}</td>
                     </tr>
                     <tr>
-                        <td>IP Address</td>
-                        <td>${modem.ip || 'N/A'}</td>
+                        <td>ICCID</td>
+                        <td>${modem.iccid || 'N/A'}</td>
                     </tr>
                     <tr>
-                        <td>APN</td>
-                        <td>${modem.apn || 'N/A'}</td>
+                        <td>AT Port</td>
+                        <td>${modem.at_port || 'N/A'}</td>
+                    </tr>
+                </table>
+            </div>
+            
+            <div class="card">
+                <h3 class="card-title mb-2">Signal Quality</h3>
+                <table class="table">
+                    <tr>
+                        <td>RSSI</td>
+                        <td>${signal.rssi || 'N/A'} dBm</td>
+                    </tr>
+                    <tr>
+                        <td>RSRP</td>
+                        <td>${signal.rsrp || 'N/A'} dBm</td>
+                    </tr>
+                    <tr>
+                        <td>RSRQ</td>
+                        <td>${signal.rsrq || 'N/A'} dB</td>
+                    </tr>
+                    <tr>
+                        <td>SINR</td>
+                        <td>${signal.sinr || 'N/A'} dB</td>
                     </tr>
                 </table>
             </div>
@@ -721,18 +810,16 @@ class AdaPiApp {
             <div class="grid grid-3 mb-3">
                 <div class="stat-card">
                     <div class="stat-label">Adapter</div>
-                    <div class="stat-value ${bt.powered ? 'text-success' : 'text-error'}">${bt.powered ? 'On' : 'Off'}</div>
+                    <div class="stat-value ${bt.powered ? 'text-success' : 'text-error'}">${bt.powered ? 'Powered' : 'Off'}</div>
                     <div class="stat-label">${bt.mac || 'N/A'}</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Discoverable</div>
-                    <div class="stat-value">${bt.discoverable ? 'Yes' : 'No'}</div>
-                    <div class="stat-label">Broadcasting availability</div>
+                    <div class="stat-value ${bt.discoverable ? 'text-success' : 'text-warning'}">${bt.discoverable ? 'Yes' : 'No'}</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-label">Last Update</div>
-                    <div class="stat-value">${this.formatTimestamp(bt.timestamp)}</div>
-                    <div class="stat-label">Adapter refresh time</div>
+                    <div class="stat-label">Paired Devices</div>
+                    <div class="stat-value text-info">${paired.length}</div>
                 </div>
             </div>
 
@@ -759,7 +846,7 @@ class AdaPiApp {
                             `).join('')}
                         </tbody>
                     </table>
-                ` : '<p class="text-muted">No paired devices found.</p>'}
+                ` : '<p class="text-muted text-center" style="padding: 20px;">No paired devices found.</p>'}
             </div>
 
             <div class="card">
@@ -783,13 +870,15 @@ class AdaPiApp {
                             `).join('')}
                         </tbody>
                     </table>
-                ` : '<p class="text-muted">No available devices detected.</p>'}
+                ` : '<p class="text-muted text-center" style="padding: 20px;">No available devices detected.</p>'}
             </div>
         `;
     }
     
     renderOBD() {
         const obd = this.data.obd || {};
+        const values = obd.values || {};
+        const dtc = obd.dtc || [];
         
         return `
             <div class="page-header">
@@ -800,44 +889,120 @@ class AdaPiApp {
             <div class="grid grid-4 mb-3">
                 <div class="stat-card">
                     <div class="stat-label">RPM</div>
-                    <div class="stat-value text-primary">${obd.rpm || 0}</div>
+                    <div class="stat-value text-primary">${values.rpm || 0}</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Speed</div>
-                    <div class="stat-value text-info">${obd.speed || 0} km/h</div>
+                    <div class="stat-value text-info">${values.speed || 0} km/h</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-label">Coolant Temp</div>
-                    <div class="stat-value ${this.getTempColor(obd.coolant_temp)}">${obd.coolant_temp || 0}°C</div>
+                    <div class="stat-label">Coolant</div>
+                    <div class="stat-value ${this.getTempColor(values.coolant)}">${values.coolant || 0}°C</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Throttle</div>
-                    <div class="stat-value text-success">${obd.throttle || 0}%</div>
+                    <div class="stat-value text-success">${values.throttle || 0}%</div>
                 </div>
             </div>
             
-            <div class="card">
-                <h3 class="card-title mb-2">Vehicle Status</h3>
+            <div class="card mb-3">
+                <h3 class="card-title mb-2">Connection Status</h3>
                 <table class="table">
                     <tr>
-                        <td>Engine Load</td>
-                        <td>${obd.engine_load || 0}%</td>
+                        <td>Status</td>
+                        <td><span class="badge ${obd.connected ? 'badge-success' : 'badge-error'}">${obd.connected ? 'Connected' : 'Disconnected'}</span></td>
                     </tr>
                     <tr>
-                        <td>Fuel Level</td>
-                        <td>${obd.fuel_level || 0}%</td>
+                        <td>Port</td>
+                        <td>${obd.port || 'N/A'}</td>
                     </tr>
                     <tr>
-                        <td>Intake Temp</td>
-                        <td>${obd.intake_temp || 0}°C</td>
+                        <td>Protocol</td>
+                        <td>${obd.protocol || 'N/A'}</td>
                     </tr>
+                    ${obd.error ? `
                     <tr>
-                        <td>Connected</td>
-                        <td><span class="badge ${obd.connected ? 'badge-success' : 'badge-error'}">${obd.connected ? 'Yes' : 'No'}</span></td>
+                        <td>Error</td>
+                        <td class="text-error">${obd.error}</td>
                     </tr>
+                    ` : ''}
                 </table>
             </div>
+            
+            <div class="card mb-3">
+                <h3 class="card-title mb-2">Engine Data</h3>
+                <div class="grid grid-2">
+                    <table class="table">
+                        <tr>
+                            <td>Engine Load</td>
+                            <td>${values.load || 0}%</td>
+                        </tr>
+                        <tr>
+                            <td>Fuel Level</td>
+                            <td>${values.fuel_level || 0}%</td>
+                        </tr>
+                        <tr>
+                            <td>Intake Temp</td>
+                            <td>${values.intake_temp || 0}°C</td>
+                        </tr>
+                        <tr>
+                            <td>MAF</td>
+                            <td>${(values.maf || 0).toFixed(2)} g/s</td>
+                        </tr>
+                    </table>
+                    <table class="table">
+                        <tr>
+                            <td>MAP</td>
+                            <td>${values.map || 0} kPa</td>
+                        </tr>
+                        <tr>
+                            <td>Voltage</td>
+                            <td>${(values.voltage || 0).toFixed(1)}V</td>
+                        </tr>
+                        <tr>
+                            <td>Boost Pressure</td>
+                            <td>${values.boost_pressure || 0} kPa</td>
+                        </tr>
+                        <tr>
+                            <td>Rail Pressure</td>
+                            <td>${values.rail_pressure || 0}</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+            
+            ${dtc.length > 0 ? `
+            <div class="card">
+                <h3 class="card-title mb-2">Diagnostic Trouble Codes</h3>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Code</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${dtc.map(code => `
+                            <tr>
+                                <td><span class="badge badge-error">${code}</span></td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+                <div class="mt-2">
+                    <button class="btn btn-primary" onclick="window.adaPi.clearDTC()">Clear Codes</button>
+                </div>
+            </div>
+            ` : ''}
         `;
+    }
+    
+    async clearDTC() {
+        const result = await this.apiPost('/api/obd/clear', {});
+        if (result && result.status === 'ok') {
+            alert('DTC codes cleared successfully');
+            await this.fetchOBD();
+            this.updateCurrentPage();
+        }
     }
     
     renderTacho() {
@@ -846,24 +1011,21 @@ class AdaPiApp {
         return `
             <div class="page-header">
                 <h1 class="page-title">Tachograph</h1>
-                <p class="page-subtitle">Driver hours and compliance</p>
+                <p class="page-subtitle">Driver hours and speed logging</p>
             </div>
 
             <div class="grid grid-3 mb-3">
                 <div class="stat-card">
                     <div class="stat-label">Current Speed</div>
                     <div class="stat-value text-primary">${(tacho.speed || 0).toFixed(1)} km/h</div>
-                    <div class="stat-label">Live vehicle speed</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Latitude</div>
-                    <div class="stat-value">${tacho.latitude || 0}</div>
-                    <div class="stat-label">GPS latitude</div>
+                    <div class="stat-value">${(tacho.latitude || 0).toFixed(6)}</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">Longitude</div>
-                    <div class="stat-value">${tacho.longitude || 0}</div>
-                    <div class="stat-label">GPS longitude</div>
+                    <div class="stat-value">${(tacho.longitude || 0).toFixed(6)}</div>
                 </div>
             </div>
 
@@ -876,7 +1038,7 @@ class AdaPiApp {
                     </tr>
                     <tr>
                         <td>Upload Interval</td>
-                        <td>${tacho.upload_interval || 0} minutes</td>
+                        <td>${tacho.upload_interval || 5} minutes</td>
                     </tr>
                     <tr>
                         <td>Last Upload</td>
@@ -895,7 +1057,7 @@ class AdaPiApp {
             </div>
             
             <div class="card">
-                <h3 class="card-title mb-2">Recent Logs</h3>
+                <h3 class="card-title mb-2">Live Logs</h3>
                 <div id="logsTable">
                     <div class="loading">
                         <div class="spinner"></div>
@@ -907,27 +1069,23 @@ class AdaPiApp {
     }
     
     renderLogsTable(logs) {
+        if (!logs || logs.length === 0) {
+            document.getElementById('logsTable').innerHTML = '<p class="text-center text-muted" style="padding: 20px;">No logs available</p>';
+            return;
+        }
+        
         const table = `
-            <table class="table">
-                <thead>
-                    <tr>
-                        <th>Timestamp</th>
-                        <th>Level</th>
-                        <th>Module</th>
-                        <th>Message</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${logs.map(log => `
-                        <tr>
-                            <td>${log.timestamp}</td>
-                            <td><span class="badge badge-${this.getLogLevelColor(log.level)}">${log.level}</span></td>
-                            <td>${log.module}</td>
-                            <td>${log.message}</td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
+            <div style="max-height: 600px; overflow-y: auto;">
+                <table class="table">
+                    <tbody>
+                        ${logs.map(log => `
+                            <tr>
+                                <td style="font-family: monospace; font-size: 12px;">${log}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
         `;
         
         document.getElementById('logsTable').innerHTML = table;
@@ -940,11 +1098,203 @@ class AdaPiApp {
                 <p class="page-subtitle">System configuration</p>
             </div>
             
-            <div class="card">
-                <h3 class="card-title mb-2">Configuration</h3>
-                <p class="text-center" style="padding: 40px;">Settings panel coming soon...</p>
+            <div class="grid grid-2 mb-3">
+                <div class="card">
+                    <h3 class="card-title mb-2">Device Settings</h3>
+                    <div class="mb-2">
+                        <label class="stat-label">Device ID</label>
+                        <input type="text" id="deviceId" class="form-input" placeholder="ada-pi-001">
+                    </div>
+                    <button class="btn btn-primary" onclick="window.adaPi.saveDeviceId()">Save Device ID</button>
+                </div>
+                
+                <div class="card">
+                    <h3 class="card-title mb-2">GPS Settings</h3>
+                    <div class="mb-2">
+                        <label class="stat-label">Unit Mode</label>
+                        <select id="gpsUnit" class="form-input">
+                            <option value="auto">Auto (GPS-based)</option>
+                            <option value="kmh">Kilometers per hour (km/h)</option>
+                            <option value="mph">Miles per hour (mph)</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary" onclick="window.adaPi.saveGPSUnit()">Save GPS Unit</button>
+                </div>
             </div>
+            
+            <div class="card mb-3">
+                <h3 class="card-title mb-2">Authentication</h3>
+                <p class="text-warning mb-2">⚠️ Warning: Changing credentials will require re-login</p>
+                <div class="grid grid-2 mb-2">
+                    <div>
+                        <label class="stat-label">Username</label>
+                        <input type="text" id="authUsername" class="form-input" placeholder="admin">
+                    </div>
+                    <div>
+                        <label class="stat-label">Password</label>
+                        <input type="password" id="authPassword" class="form-input" placeholder="••••••">
+                    </div>
+                </div>
+                <button class="btn btn-primary" onclick="window.adaPi.saveAuth()">Update Credentials</button>
+            </div>
+            
+            <div class="card mb-3">
+                <h3 class="card-title mb-2">Cloud Upload</h3>
+                <div class="mb-2">
+                    <label class="stat-label">Upload URL</label>
+                    <input type="text" id="cloudUrl" class="form-input" placeholder="https://api.example.com/upload">
+                </div>
+                <div class="mb-2">
+                    <label class="stat-label">Logs URL</label>
+                    <input type="text" id="logsUrl" class="form-input" placeholder="https://api.example.com/logs">
+                </div>
+                <button class="btn btn-primary" onclick="window.adaPi.saveCloud()">Save Cloud Settings</button>
+            </div>
+            
+            <div class="card">
+                <h3 class="card-title mb-2">UPS Settings</h3>
+                <div class="mb-2">
+                    <label class="stat-label">Auto-Shutdown Percentage</label>
+                    <input type="number" id="upsShutdown" class="form-input" placeholder="10" min="5" max="50">
+                    <small class="text-muted">System will shutdown when battery reaches this level</small>
+                </div>
+                <button class="btn btn-primary" onclick="window.adaPi.saveUPS()">Save UPS Settings</button>
+            </div>
+            
+            <style>
+                .form-input {
+                    width: 100%;
+                    padding: 10px;
+                    background: var(--bg-light);
+                    border: 1px solid var(--border);
+                    border-radius: var(--radius-sm);
+                    color: var(--text);
+                    font-size: var(--font-base);
+                    margin-bottom: 8px;
+                }
+                .form-input:focus {
+                    outline: none;
+                    border-color: var(--primary);
+                }
+            </style>
         `;
+    }
+    
+    setupSettingsHandlers() {
+        // Already using onclick in HTML
+    }
+    
+    populateSettings() {
+        const settings = this.settings;
+        
+        // Device ID
+        const deviceIdInput = document.getElementById('deviceId');
+        if (deviceIdInput && settings.device_id) {
+            deviceIdInput.value = settings.device_id;
+        }
+        
+        // GPS Unit
+        const gpsUnitSelect = document.getElementById('gpsUnit');
+        if (gpsUnitSelect && settings.gps && settings.gps.unit_mode) {
+            gpsUnitSelect.value = settings.gps.unit_mode;
+        }
+        
+        // Auth
+        const authUsername = document.getElementById('authUsername');
+        if (authUsername && settings.auth && settings.auth.username) {
+            authUsername.value = settings.auth.username;
+        }
+        
+        // Cloud
+        const cloudUrl = document.getElementById('cloudUrl');
+        const logsUrl = document.getElementById('logsUrl');
+        if (cloudUrl && settings.cloud) {
+            cloudUrl.value = settings.cloud.upload_url || '';
+            logsUrl.value = settings.cloud.logs_url || '';
+        }
+        
+        // UPS
+        const upsShutdown = document.getElementById('upsShutdown');
+        if (upsShutdown && settings.ups && settings.ups.shutdown_pct) {
+            upsShutdown.value = settings.ups.shutdown_pct;
+        }
+    }
+    
+    async saveDeviceId() {
+        const deviceId = document.getElementById('deviceId').value;
+        const result = await this.apiPost('/api/settings/device', { device_id: deviceId });
+        if (result && result.status === 'ok') {
+            alert('Device ID saved successfully');
+        } else {
+            alert('Failed to save Device ID');
+        }
+    }
+    
+    async saveGPSUnit() {
+        const mode = document.getElementById('gpsUnit').value;
+        const result = await this.apiPost('/api/gps/unit', { mode });
+        if (result && result.status === 'ok') {
+            alert('GPS unit mode saved successfully');
+            await this.fetchGPS();
+            this.updateCurrentPage();
+        } else {
+            alert('Failed to save GPS unit mode');
+        }
+    }
+    
+    async saveAuth() {
+        const username = document.getElementById('authUsername').value;
+        const password = document.getElementById('authPassword').value;
+        
+        if (!username || !password) {
+            alert('Please enter both username and password');
+            return;
+        }
+        
+        const result = await this.apiPost('/api/settings', {
+            auth: { username, password }
+        });
+        
+        if (result && result.status === 'ok') {
+            alert('Credentials updated successfully. Please re-login if accessing remotely.');
+        } else {
+            alert('Failed to update credentials');
+        }
+    }
+    
+    async saveCloud() {
+        const uploadUrl = document.getElementById('cloudUrl').value;
+        const logsUrl = document.getElementById('logsUrl').value;
+        
+        const result = await this.apiPost('/api/settings/cloud', {
+            upload_url: uploadUrl,
+            logs_url: logsUrl
+        });
+        
+        if (result && result.status === 'ok') {
+            alert('Cloud settings saved successfully');
+        } else {
+            alert('Failed to save cloud settings');
+        }
+    }
+    
+    async saveUPS() {
+        const shutdownPct = parseInt(document.getElementById('upsShutdown').value);
+        
+        if (isNaN(shutdownPct) || shutdownPct < 5 || shutdownPct > 50) {
+            alert('Please enter a value between 5 and 50');
+            return;
+        }
+        
+        const result = await this.apiPost('/api/settings/ups', {
+            shutdown_pct: shutdownPct
+        });
+        
+        if (result && result.status === 'ok') {
+            alert('UPS settings saved successfully');
+        } else {
+            alert('Failed to save UPS settings');
+        }
     }
     
     // Helper Functions
@@ -974,22 +1324,22 @@ class AdaPiApp {
         if (temp < 75) return 'text-warning';
         return 'text-error';
     }
+    
+    getSignalColor(rssi) {
+        if (rssi > -70) return 'text-success';
+        if (rssi > -85) return 'text-warning';
+        return 'text-error';
+    }
 
     formatTimestamp(ts) {
         if (!ts) return 'Never';
         try {
-            return new Date(ts * 1000).toLocaleString();
+            if (typeof ts === 'number') {
+                return new Date(ts * 1000).toLocaleString();
+            }
+            return new Date(ts).toLocaleString();
         } catch (e) {
             return 'Invalid date';
-        }
-    }
-
-    getLogLevelColor(level) {
-        switch(level.toLowerCase()) {
-            case 'error': return 'error';
-            case 'warning': return 'warning';
-            case 'info': return 'info';
-            default: return 'info';
         }
     }
 }
