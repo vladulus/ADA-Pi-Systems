@@ -33,14 +33,24 @@ fi
 
 echo "Project root detected: $PROJECT_ROOT"
 
-
 # ---------------------------------------
 # INSTALL DEPENDENCIES
 # ---------------------------------------
 echo ""
 echo "→ Installing system dependencies..."
 sudo apt update
-sudo apt install -y python3 python3-pip python3-venv cloudflared
+sudo apt install -y python3 python3-pip python3-venv
+
+echo ""
+echo "→ Installing Cloudflared..."
+
+sudo mkdir -p --mode=0755 /usr/share/keyrings
+curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+
+echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflared.list
+
+sudo apt update
+sudo apt install -y cloudflared
 
 echo ""
 echo "→ Creating virtual environment..."
@@ -55,7 +65,6 @@ echo ""
 echo "→ Installing Python dependencies..."
 pip install --upgrade pip
 pip install -r requirements.txt
-
 
 # ---------------------------------------
 # CREATE BACKEND SYSTEMD SERVICE
@@ -86,7 +95,6 @@ sudo systemctl restart ada-pi-backend
 
 echo "✓ Backend service installed"
 
-
 # ---------------------------------------
 # FRONTEND (Kiosk Mode Only)
 # ---------------------------------------
@@ -105,14 +113,13 @@ if [[ "$MODE" == "2" ]]; then
     sudo bash -c "cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf" <<EOF
 [Service]
 ExecStart=
-ExecStart=-/sbin/agetty --autologin pi --noclear %I \$TERM
+ExecStart=-/sbin/agetty --autologin pi --noclear %I $TERM
 EOF
 
     sudo bash -c "cat > /home/pi/.bash_profile" <<EOF
 chromium-browser --noerrdialogs --disable-infobars --kiosk http://localhost:8000
 EOF
 fi
-
 
 # ---------------------------------------
 # CLOUDFLARE TUNNEL
@@ -134,6 +141,7 @@ echo "→ Logging into Cloudflare..."
 echo "Open the link shown and approve access."
 
 sudo cloudflared tunnel login
+
 
 echo ""
 echo "→ Creating tunnel..."
@@ -157,6 +165,7 @@ ingress:
   - service: http_status:404
 EOF
 
+
 echo ""
 echo "→ Installing systemd service for tunnel..."
 sudo cloudflared service install
@@ -164,7 +173,6 @@ sudo cloudflared service install
 sudo systemctl enable cloudflared
 sudo systemctl restart cloudflared
 
-# GET PUBLIC CLOUDLFARED DOMAIN
 CF_DOMAIN=$(cloudflared tunnel list | grep "$PIHOST" | awk '{print $NF}')
 
 echo ""
