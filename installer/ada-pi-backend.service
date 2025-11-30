@@ -1,37 +1,18 @@
 [Unit]
-Description=ADA-Pi Unified Backend Engine
-After=network.target network-online.target bluetooth.target ModemManager.service
-Wants=network-online.target
+Description=Ada-Pi Backend Service
+After=network.target
 
 [Service]
 Type=simple
-
-# Run as root because:
-# - OBD needs serial ports
-# - ModemManager & AT commands need privileges
-# - Bluetooth DBus management needs root
 User=root
-
-# WORKING DIRECTORY
 WorkingDirectory=/opt/ada-pi/backend
-
-# VENV PYTHON EXECUTION
-ExecStart=/opt/ada-pi/venv/bin/python /opt/ada-pi/backend/main.py
-
+ExecStart=/usr/bin/python3 /opt/ada-pi/backend/main.py
 Restart=always
-RestartSec=3
-Environment=PYTHONUNBUFFERED=1
+RestartSec=5
 
-# CAPABILITIES REQUIRED BY MODULES
-AmbientCapabilities=CAP_SYS_RAWIO CAP_NET_ADMIN CAP_SYS_ADMIN
-CapabilityBoundingSet=CAP_SYS_RAWIO CAP_NET_ADMIN CAP_SYS_ADMIN
-
-# ALLOW WRITE TO SYSTEM (LOGGING, STORAGE MANAGER)
-ProtectSystem=no
-ProtectHome=no
-
-# Security good practices
-NoNewPrivileges=no
+# Ensure logging goes to systemd journal
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
