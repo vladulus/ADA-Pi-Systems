@@ -1,19 +1,18 @@
 #!/bin/bash
 
 echo "=============================================="
-echo "      ADA-PI SYSTEMS — UNINSTALL SCRIPT"
+echo "        ADA-PI SYSTEMS — UNINSTALLER"
 echo "=============================================="
 echo ""
 
 SERVICE_NAME="ada-pi-backend.service"
 INSTALL_PATH="/opt/ada-pi"
-TUNNEL_NAME_FILE="/etc/cloudflared/ada-pi-tunnel-name"
-SYSTEMD_TUNNEL_SERVICE="/etc/systemd/system/cloudflared.service"
+LOG_PATH="/var/log/ada-pi"
+CF_CONFIG_DIR="/etc/cloudflared"
+CF_RUN_DIR="/root/.cloudflared"
+CF_SERVICE="/etc/systemd/system/cloudflared.service"
 
-# ------------------------------------------------------------
-# 1) STOP + DISABLE ADA-PI BACKEND SERVICE
-# ------------------------------------------------------------
-echo "[1/6] Stopping backend service..."
+echo "[1/7] Stopping backend service..."
 if systemctl is-active --quiet "$SERVICE_NAME"; then
     sudo systemctl stop "$SERVICE_NAME"
 fi
@@ -22,34 +21,24 @@ echo "Disabling backend service..."
 sudo systemctl disable "$SERVICE_NAME" >/dev/null 2>&1
 sudo rm -f "/etc/systemd/system/$SERVICE_NAME"
 
-# ------------------------------------------------------------
-# 2) REMOVE INSTALLATION DIRECTORY
-# ------------------------------------------------------------
-echo "[2/6] Removing installed backend from $INSTALL_PATH..."
-
+echo ""
+echo "[2/7] Removing ADA-PI installation..."
 if [ -d "$INSTALL_PATH" ]; then
     sudo rm -rf "$INSTALL_PATH"
     echo "✔ Deleted $INSTALL_PATH"
 else
-    echo "Skipping — Install directory not found."
+    echo "Skipping — install directory not found."
 fi
 
-# ------------------------------------------------------------
-# 3) REMOVE LOG DIRECTORY
-# ------------------------------------------------------------
-LOG_PATH="/var/log/ada-pi"
-echo "[3/6] Cleaning logs ($LOG_PATH)..."
-
+echo ""
+echo "[3/7] Removing logs..."
 if [ -d "$LOG_PATH" ]; then
     sudo rm -rf "$LOG_PATH"
-    echo "✔ Logs removed"
+    echo "✔ Logs removed ($LOG_PATH)"
 else
-    echo "Skipping — log directory not found."
+    echo "Skipping — no logs found."
 fi
 
-# ------------------------------------------------------------
-# 4) ASK IF CLOUDFARE TUNNEL SHOULD BE REMOVED
-# ------------------------------------------------------------
 echo ""
 echo "=============================================="
 echo "      Cloudflare Tunnel Removal (Optional)"
@@ -58,65 +47,73 @@ echo ""
 
 REMOVE_CF=false
 
-if [ -f "$TUNNEL_NAME_FILE" ]; then
-    CF_TUNNEL_NAME=$(cat "$TUNNEL_NAME_FILE")
-    echo "Cloudflare tunnel detected: $CF_TUNNEL_NAME"
-else
-    CF_TUNNEL_NAME=""
+if [ -d "$CF_CONFIG_DIR" ]; then
+    echo "Cloudflare configuration detected."
 fi
 
-read -p "Do you want to remove Cloudflare Tunnel? (yes/no): " REMOVE_CF_ANSWER
-
+read -p "Do you want to remove Cloudflare Tunnel config? (yes/no): " REMOVE_CF_ANSWER
 if [[ "$REMOVE_CF_ANSWER" =~ ^([yY][eE][sS]|[yY])$ ]]; then
     REMOVE_CF=true
 fi
 
 if [ "$REMOVE_CF" = true ]; then
-    echo "[4/6] Removing Cloudflare tunnel and config..."
+    echo "[4/7] Removing Cloudflare tunnel + config..."
 
-    sudo systemctl stop cloudflared.service >/dev/null 2>&1
-    sudo systemctl disable cloudflared.service >/dev/null 2>&1
-    sudo rm -f "$SYSTEMD_TUNNEL_SERVICE"
+    sudo systemctl stop cloudflared.service >/dev/null 2>&1 || true
+    sudo systemctl disable cloudflared.service >/dev/null 2>&1 || true
 
-    # Tunnel config directory
-    if [ -d "/etc/cloudflared" ]; then
-        sudo rm -rf /etc/cloudflared
-    fi
+    # Delete local Cloudflare configuration safely
+    sudo rm -rf "$CF_CONFIG_DIR"
+    sudo rm -rf "$CF_RUN_DIR"
 
-    # Tunnel binary
-    if command -v cloudflared >/dev/null 2>&1; then
-        sudo rm -f "$(command -v cloudflared)"
-    fi
-
-    echo "✔ Cloudflare Tunnel removed"
+    echo "✔ Cloudflare config removed"
 else
-    echo "Skipping — Cloudflare Tunnel kept."
-fi
-
-# ------------------------------------------------------------
-# 5) CLEAN SYSTEMD
-# ------------------------------------------------------------
-echo ""
-echo "[5/6] Reloading systemd daemon..."
-sudo systemctl daemon-reload
-
-# ------------------------------------------------------------
-# 6) OPTIONAL: REMOVE UNUSED PYTHON DEPENDENCIES
-# ------------------------------------------------------------
-read -p "Do you want to uninstall unused Python packages installed by ADA-PI? (yes/no): " REMOVE_PY
-
-if [[ "$REMOVE_PY" =~ ^([yY][eE][sS]|[yY])$ ]]; then
-    echo "[6/6] Removing Python packages..."
-
-    sudo pip3 uninstall -y websockets aiohttp pyserial requests paho-mqtt python-dotenv pyudev dbus-python > /dev/null 2>&1
-
-    echo "✔ Python dependencies removed"
-else
-    echo "Skipping — keeping Python packages."
+    echo "Skipping Cloudflare removal."
 fi
 
 echo ""
 echo "=============================================="
-echo " ADA-PI SYSTEMS — UNINSTALL COMPLETE ✔"
+echo "       Tailscale Removal (Optional)"
+echo "=============================================="
+echo ""
+
+read -p "Do you want to remove Tailscale? (yes/no): " REMOVE_TS_ANSWER
+if [[ "$REMOVE_TS_ANSWER" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+    echo "[5/7] Removing Tailscale..."
+    sudo systemctl stop tailscaled 2>/dev/null || true
+    sudo systemctl disable tailscaled 2>/dev/null || true
+    sudo apt purge -y tailscale >/dev/null 2>&1 || true
+    sudo rm -rf /var/lib/tailscale
+    sudo rm -rf /etc/tailscale
+    echo "✔ Tailscale removed"
+else
+    echo "Skipping Tailscale removal."
+fi
+
+echo ""
+echo "[6/7] Reloading systemd..."
+sudo systemctl daemon-reload
+
+echo ""
+echo "=============================================="
+echo " OPTIONAL — Remove global Python packages?"
+echo "=============================================="
+echo ""
+echo "Most ADA-PI dependencies are installed in a venv."
+echo "Removing system-wide pip packages is usually not needed."
+echo ""
+
+read -p "Do you still want to remove old global Python deps? (yes/no): " REMOVE_PY
+if [[ "$REMOVE_PY" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+    echo "[7/7] Removing old global Python packages..."
+    sudo pip3 uninstall -y paho-mqtt requests python-dotenv pyserial psutil websocket-client >/dev/null 2>&1
+    echo "✔ Python dependencies removed"
+else
+    echo "Skipping — Python packages kept."
+fi
+
+echo ""
+echo "=============================================="
+echo "      ADA-PI SYSTEMS — UNINSTALL COMPLETE ✔"
 echo "=============================================="
 echo ""
