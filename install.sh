@@ -30,6 +30,7 @@ check_os() {
     sudo apt install -y python3 python3-pip python3-venv curl git
 }
 
+
 # ----------------------------------------
 # CLEANUP OLD INSTALLATIONS
 # ----------------------------------------
@@ -43,12 +44,108 @@ cleanup_old() {
     sudo rm -rf "$INSTALL_DIR"
     sudo rm -rf /etc/cloudflared
     sudo rm -rf /root/.cloudflared
+    sudo rm -rf /var/log/ada-pi
 
     sudo systemctl daemon-reload
 
     green "Old installation removed!"
 }
 
+
+# ----------------------------------------
+# SUPER UNINSTALL (From Upgraded Script)
+# ----------------------------------------
+super_uninstall() {
+    echo "=============================================="
+    echo "      ADA-PI SYSTEMS — UNINSTALL SCRIPT"
+    echo "=============================================="
+    echo ""
+
+    echo "[1/7] Stopping backend service..."
+    if systemctl is-active --quiet "ada-pi-backend.service"; then
+        sudo systemctl stop "ada-pi-backend.service"
+    fi
+
+    echo "Disabling backend service..."
+    sudo systemctl disable "ada-pi-backend.service" >/dev/null 2>&1
+    sudo rm -f "/etc/systemd/system/ada-pi-backend.service"
+
+    echo ""
+    echo "[2/7] Removing ADA-PI installation..."
+    if [ -d "$INSTALL_DIR" ]; then
+        sudo rm -rf "$INSTALL_DIR"
+        echo "✔ Deleted $INSTALL_DIR"
+    else
+        echo "Skipping — install directory not found."
+    fi
+
+    echo ""
+    echo "[3/7] Removing logs..."
+    if [ -d "/var/log/ada-pi" ]; then
+        sudo rm -rf "/var/log/ada-pi"
+        echo "✔ Logs removed"
+    else
+        echo "Skipping — no logs found."
+    fi
+
+    echo ""
+    echo "=============================================="
+    echo "       Cloudflare Tunnel Removal (Optional)"
+    echo "=============================================="
+
+    read -p "Remove Cloudflare Tunnel config? (yes/no): " REMOVE_CF
+    if [[ "$REMOVE_CF" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+        echo "Removing Cloudflare config..."
+
+        sudo systemctl stop cloudflared.service 2>/dev/null || true
+        sudo systemctl disable cloudflared.service 2>/dev/null || true
+        sudo rm -rf /etc/cloudflared
+        sudo rm -rf /root/.cloudflared
+
+        echo "✔ Cloudflare removed"
+    else
+        echo "Skipping Cloudflare removal."
+    fi
+
+    echo ""
+    echo "=============================================="
+    echo "       Tailscale Removal (Optional)"
+    echo "=============================================="
+
+    read -p "Remove Tailscale? (yes/no): " REMOVE_TS
+    if [[ "$REMOVE_TS" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+        sudo systemctl stop tailscaled 2>/dev/null || true
+        sudo systemctl disable tailscaled 2>/dev/null || true
+        sudo apt purge -y tailscale >/dev/null 2>&1
+        sudo rm -rf /var/lib/tailscale
+        sudo rm -rf /etc/tailscale
+        echo "✔ Tailscale removed"
+    else
+        echo "Skipping Tailscale removal."
+    fi
+
+    echo ""
+    echo "[6/7] Reloading systemd..."
+    sudo systemctl daemon-reload
+
+    echo ""
+    echo "=============================================="
+    echo " OPTIONAL — Remove global Python packages?"
+    echo "=============================================="
+    echo ""
+
+    read -p "Remove global Python packages? (yes/no): " REMOVE_PY
+    if [[ "$REMOVE_PY" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+        sudo pip3 uninstall -y paho-mqtt requests python-dotenv pyserial psutil websocket-client >/dev/null 2>&1
+        echo "✔ Python deps removed"
+    else
+        echo "Skipping Python cleanup."
+    fi
+
+    echo ""
+    echo "✔ ADA-PI FULL UNINSTALL COMPLETE"
+    echo ""
+}
 
 
 # ----------------------------------------
@@ -71,6 +168,7 @@ install_backend() {
     green "Backend installed!"
 }
 
+
 create_backend_service() {
 sudo bash -c "cat > $SERVICE_FILE" <<EOF
 [Unit]
@@ -91,9 +189,8 @@ EOF
     sudo systemctl enable ada-pi-backend
     sudo systemctl restart ada-pi-backend
 
-    green "Backend systemd service installed & started!"
+    green "Backend service installed & started!"
 }
-
 
 
 # ----------------------------------------
@@ -122,7 +219,6 @@ EOF
 }
 
 
-
 # ----------------------------------------
 # CLOUDFLARE INSTALL
 # ----------------------------------------
@@ -139,16 +235,17 @@ EOF
     sudo apt update
     sudo apt install -y cloudflared
 
-    read -p "Enter Cloudflare hostname (example: pi01): " PIHOST
+    read -p "Enter hostname (example: pi01): " PIHOST
 
     sudo cloudflared tunnel login
     sudo cloudflared tunnel create "$PIHOST"
 
-    TUNNEL_ID=$(sudo ls /root/.cloudflared/*.json | head -n 1 | sed 's/[^0-9a-zA-Z]//g')
+    CF_JSON=$(ls /root/.cloudflared/*.json | head -n1)
+    TUNNEL_ID=$(basename "$CF_JSON" .json)
 
 sudo bash -c "cat > /etc/cloudflared/config.yml" <<EOF
 tunnel: $TUNNEL_ID
-credentials-file: /root/.cloudflared/$TUNNEL_ID.json
+credentials-file: $CF_JSON
 
 ingress:
   - hostname: $PIHOST.adasystems.uk
@@ -164,64 +261,21 @@ EOF
 }
 
 
-
 # ----------------------------------------
 # INSTALL TAILSCALE
 # ----------------------------------------
 install_tailscale() {
     cyan "Installing Tailscale..."
-
     curl -fsSL https://tailscale.com/install.sh | sh
 
-    yellow "Run this manually to authenticate:"
+    yellow "Run this to authenticate:"
     echo "sudo tailscale up"
 }
 
 
-
 # ----------------------------------------
-# UNINSTALL EVERYTHING
+# NETWORK MENU
 # ----------------------------------------
-uninstall_all() {
-    red "Uninstalling ADA-Pi completely..."
-    cleanup_old
-    sudo apt purge -y tailscale cloudflared || true
-    sudo apt autoremove -y
-    green "ADA-Pi fully uninstalled."
-}
-
-
-
-# ----------------------------------------
-# MAIN MENU
-# ----------------------------------------
-main_menu() {
-clear
-cyan "====================================="
-cyan "         ADA-Pi Installer"
-cyan "====================================="
-echo ""
-echo "1) Install Backend Only"
-echo "2) Install Full System (Backend + Kiosk)"
-echo "3) Networking Options (Cloudflare / Tailscale / Both / None)"
-echo "4) Cleanup Old Installation"
-echo "5) Uninstall ADA-Pi Completely"
-echo "0) Exit"
-echo ""
-read -p "Choose option: " CHOICE
-
-case $CHOICE in
-    1) cleanup_old; install_backend ;;
-    2) cleanup_old; install_backend; install_kiosk ;;
-    3) networking_menu ;;
-    4) cleanup_old ;;
-    5) uninstall_all ;;
-    0) exit 0 ;;
-    *) red "Invalid choice!"; sleep 1; main_menu ;;
-esac
-}
-
-
 networking_menu() {
 clear
 cyan "Networking Options"
@@ -243,7 +297,38 @@ case $NET in
 esac
 }
 
-# Start
+
+# ----------------------------------------
+# MAIN MENU
+# ----------------------------------------
+main_menu() {
+clear
+cyan "====================================="
+cyan "         ADA-Pi Installer"
+cyan "====================================="
+echo ""
+echo "1) Install Backend Only"
+echo "2) Install Full System (Backend + Kiosk)"
+echo "3) Networking Options"
+echo "4) Cleanup Old Installation"
+echo "5) Uninstall ADA-Pi Completely"
+echo "0) Exit"
+echo ""
+read -p "Choose option: " CHOICE
+
+case $CHOICE in
+    1) cleanup_old; install_backend ;;
+    2) cleanup_old; install_backend; install_kiosk ;;
+    3) networking_menu ;;
+    4) cleanup_old ;;
+    5) super_uninstall ;;
+    0) exit 0 ;;
+    *) red "Invalid choice!"; sleep 1; main_menu ;;
+esac
+}
+
+
+# Run installer
 check_os
 main_menu
 
