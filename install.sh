@@ -2,6 +2,11 @@
 
 set -e
 
+# =======================================
+# ADA-Pi Full System Installer (Enhanced)
+# With optional Cloudflare / Tailscale / Both / None
+# =======================================
+
 echo ""
 echo "======================================="
 echo "   ADA-Pi Full System Installer"
@@ -9,7 +14,7 @@ echo "======================================="
 echo ""
 
 # ---------------------------------------
-# ASK FOR INSTALL MODE
+# INSTALL MODE
 # ---------------------------------------
 echo "Select installation mode:"
 echo "  1) Headless (Backend only)"
@@ -20,6 +25,21 @@ if [[ "$MODE" != "1" && "$MODE" != "2" ]]; then
     echo "Invalid selection."
     exit 1
 fi
+
+echo ""
+echo "Cloud Access Options:"
+echo "  1) Cloudflare Tunnel"
+echo "  2) Tailscale VPN"
+echo "  3) Both Cloudflare + Tailscale"
+echo "  4) None (no remote access setup)"
+read -p "Choose 1–4: " NETOPT
+
+if ! [[ "$NETOPT" =~ ^[1-4]$ ]]; then
+    echo "Invalid selection."
+    exit 1
+fi
+
+echo "Selected network option: $NETOPT"
 
 # ---------------------------------------
 # DETECT PROJECT ROOT
@@ -34,24 +54,45 @@ fi
 echo "Project root detected: $PROJECT_ROOT"
 
 # ---------------------------------------
-# INSTALL DEPENDENCIES
+# SYSTEM DEPENDENCIES
 # ---------------------------------------
 echo ""
-echo "→ Installing system dependencies..."
+echo "→ Installing core system dependencies..."
 sudo apt update
-sudo apt install -y python3 python3-pip python3-venv
+sudo apt install -y python3 python3-pip python3-venv curl
 
-echo ""
-echo "→ Installing Cloudflared..."
+# ---------------------------------------
+# OPTIONAL: CLOUDLFARED INSTALL
+# ---------------------------------------
+if [[ "$NETOPT" == "1" || "$NETOPT" == "3" ]]; then
+    echo ""
+    echo "→ Installing Cloudflared..."
 
-sudo mkdir -p --mode=0755 /usr/share/keyrings
-curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+    sudo mkdir -p --mode=0755 /usr/share/keyrings
+    curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
 
-echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflared.list
+    echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflared.list
 
-sudo apt update
-sudo apt install -y cloudflared
+    sudo apt update
+    sudo apt install -y cloudflared
+else
+    echo "Skipping Cloudflare installation"
+fi
 
+# ---------------------------------------
+# OPTIONAL: TAILSCALE INSTALL
+# ---------------------------------------
+if [[ "$NETOPT" == "2" || "$NETOPT" == "3" ]]; then
+    echo ""
+    echo "→ Installing Tailscale..."
+    curl -fsSL https://tailscale.com/install.sh | sh
+else
+    echo "Skipping Tailscale installation"
+fi
+
+# ---------------------------------------
+# BACKEND SETUP
+# ---------------------------------------
 echo ""
 echo "→ Creating virtual environment..."
 sudo mkdir -p /opt/ada-pi/backend
@@ -61,16 +102,15 @@ cd /opt/ada-pi/backend
 python3 -m venv venv
 source venv/bin/activate
 
-echo ""
 echo "→ Installing Python dependencies..."
 pip install --upgrade pip
 pip install -r requirements.txt
 
 # ---------------------------------------
-# CREATE BACKEND SYSTEMD SERVICE
+# BACKEND SYSTEMD SERVICE
 # ---------------------------------------
 echo ""
-echo "→ Installing systemd backend service..."
+echo "→ Installing backend service..."
 
 SERVICE_FILE="/etc/systemd/system/ada-pi-backend.service"
 
@@ -96,7 +136,7 @@ sudo systemctl restart ada-pi-backend
 echo "✓ Backend service installed"
 
 # ---------------------------------------
-# FRONTEND (Kiosk Mode Only)
+# FRONTEND SETUP
 # ---------------------------------------
 if [[ "$MODE" == "2" ]]; then
     echo ""
@@ -107,7 +147,7 @@ if [[ "$MODE" == "2" ]]; then
 
     sudo apt install -y chromium-browser xserver-xorg x11-xserver-utils unclutter
 
-    echo "→ Enabling autologin and kiosk..."
+    echo "→ Enabling autologin + kiosk mode..."
 
     sudo mkdir -p /etc/systemd/system/getty@tty1.service.d
     sudo bash -c "cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf" <<EOF
@@ -122,40 +162,34 @@ EOF
 fi
 
 # ---------------------------------------
-# CLOUDFLARE TUNNEL
+# CLOUDLFARE TUNNEL CONFIG (OPTIONAL)
 # ---------------------------------------
-echo ""
-echo "======================================="
-echo "      CLOUDFLARE TUNNEL SETUP"
-echo "======================================="
+if [[ "$NETOPT" == "1" || "$NETOPT" == "3" ]]; then
+    echo ""
+    echo "======================================="
+    echo "     CLOUDLFARE TUNNEL SETUP"
+    echo "======================================="
 
-read -p "Enter Pi hostname (example: pi01): " PIHOST
+    read -p "Enter Pi hostname (example: pi01): " PIHOST
 
-if [[ -z "$PIHOST" ]]; then
-    echo "Hostname cannot be empty."
-    exit 1
-fi
+    if [[ -z "$PIHOST" ]]; then
+        echo "Hostname cannot be empty."
+        exit 1
+    fi
 
-echo ""
-echo "→ Logging into Cloudflare..."
-echo "Open the link shown and approve access."
+    echo "→ Logging into Cloudflare..."
+    sudo cloudflared tunnel login
 
-sudo cloudflared tunnel login
+    echo "→ Creating tunnel..."
+    sudo cloudflared tunnel create "$PIHOST"
 
+    TUNNEL_ID=$(sudo cat /root/.cloudflared/*.json | grep -o '"TunnelID":"[^"]*' | cut -d'"' -f4)
 
-echo ""
-echo "→ Creating tunnel..."
-sudo cloudflared tunnel create "$PIHOST"
+    echo "Tunnel ID: $TUNNEL_ID"
 
-TUNNEL_ID=$(sudo cat /root/.cloudflared/*.json | grep -o '"TunnelID":"[^"]*' | cut -d'"' -f4)
-
-echo "Tunnel ID: $TUNNEL_ID"
-
-echo ""
-echo "→ Creating Cloudflare tunnel config..."
-
-sudo mkdir -p /etc/cloudflared
-sudo bash -c "cat > /etc/cloudflared/config.yml" <<EOF
+    echo "→ Creating Cloudflare config..."
+    sudo mkdir -p /etc/cloudflared
+    sudo bash -c "cat > /etc/cloudflared/config.yml" <<EOF
 tunnel: $TUNNEL_ID
 credentials-file: /root/.cloudflared/$TUNNEL_ID.json
 
@@ -165,26 +199,28 @@ ingress:
   - service: http_status:404
 EOF
 
+    echo "→ Enabling Cloudflare service..."
+    sudo cloudflared service install
+    sudo systemctl enable cloudflared
+    sudo systemctl restart cloudflared
+fi
 
-echo ""
-echo "→ Installing systemd service for tunnel..."
-sudo cloudflared service install
+# ---------------------------------------
+# TAILSCALE AUTH NOTICE
+# ---------------------------------------
+if [[ "$NETOPT" == "2" || "$NETOPT" == "3" ]]; then
+    echo ""
+    echo "→ IMPORTANT: Tailscale installed"
+    echo "Run this on your Pi to authenticate:"
+    echo ""
+    echo "    sudo tailscale up"
+    echo ""
+fi
 
-sudo systemctl enable cloudflared
-sudo systemctl restart cloudflared
-
-CF_DOMAIN=$(cloudflared tunnel list | grep "$PIHOST" | awk '{print $NF}')
-
+# ---------------------------------------
+# FINISHED
+# ---------------------------------------
 echo ""
-echo "================================================="
-echo "CLOUDLFARE SETUP COMPLETE"
-echo "Add this DNS record manually:"
-echo ""
-echo "Type:  CNAME"
-echo "Name:  $PIHOST"
-echo "Target: $CF_DOMAIN"
-echo ""
-echo "================================================="
-echo ""
-
-echo "Installation complete!"
+echo "======================================="
+echo " INSTALLATION COMPLETE "
+echo "======================================="
