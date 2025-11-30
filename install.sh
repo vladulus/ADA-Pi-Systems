@@ -440,39 +440,110 @@ select_network_tools() {
 }
 
 # ==================================================================
-# INSTALL CLOUDFLARE TUNNEL
+# INSTALL or REUSE CLOUDflare TUNNEL
 # ==================================================================
 install_cloudflare() {
 
-    whiptail --title "Cloudflare Tunnel" --msgbox "Cloudflare Tunnel will be installed.\n\nYou must enter a hostname:\nexample: pi01.${DOMAIN}\n\nyou do NOT need to change DNS nameservers." 14 70
+    # Detect existing Cloudflare installation
+    CF_INSTALLED=false
+    CF_TUNNEL_FOUND=false
+    CF_UUID=""
+    CF_HOST=""
+    CF_CONFIG="/etc/cloudflared/config.yml"
 
-    HOSTNAME=$(whiptail --inputbox "Enter Cloudflare hostname (must contain .$DOMAIN):" 12 60 "" 3>&1 1>&2 2>&3)
+    if command -v cloudflared >/dev/null 2>&1; then
+        CF_INSTALLED=true
+    fi
+
+    # Detect existing tunnel credentials
+    if ls /root/.cloudflared/*.json >/dev/null 2>&1; then
+        CF_TUNNEL_FOUND=true
+        CF_UUID=$(basename /root/.cloudflared/*.json .json)
+    fi
+
+    # Detect existing hostname inside config.yml
+    if [[ -f "$CF_CONFIG" ]]; then
+        CF_HOST=$(grep "hostname:" "$CF_CONFIG" | awk '{print $2}')
+    fi
+
+    # If everything already exists, offer reuse
+    if $CF_INSTALLED && $CF_TUNNEL_FOUND && [[ -n "$CF_HOST" ]]; then
+
+        CHOICE=$(whiptail --title "Cloudflare Already Installed" --menu \
+        "Cloudflare Tunnel detected:\n\nTunnel ID: $CF_UUID\nHostname: $CF_HOST\n\nChoose an action:" \
+        20 70 10 \
+        "1" "Reuse existing Cloudflare Tunnel (recommended)" \
+        "2" "Create NEW Cloudflare Tunnel (overwrite existing)" \
+        "3" "Cancel" \
+        3>&1 1>&2 2>&3)
+
+        case $CHOICE in
+            1)
+                log "Reusing existing Cloudflare Tunnel..."
+                systemctl enable cloudflared
+                systemctl restart cloudflared
+                whiptail --title "Cloudflare Active" \
+                    --msgbox "Your existing Cloudflare Tunnel is now active.\n\n$CF_HOST" 12 60
+                return
+                ;;
+            2)
+                whiptail --title "Warning" --yesno \
+                "This will DELETE your existing Cloudflare tunnel & create a new one.\n\nContinue?" \
+                12 60
+                if [[ $? -ne 0 ]]; then return; fi
+
+                rm -rf /etc/cloudflared
+                rm -rf /root/.cloudflared
+                rm -f /usr/bin/cloudflared
+                rm -f /etc/systemd/system/cloudflared.service
+                ;;
+            3)
+                return
+                ;;
+        esac
+
+    fi
+
+    # ==================================================================
+    # INSTALL NEW CLOUDFLARE — CLEAN INSTALL
+    # ==================================================================
+
+    whiptail --title "Cloudflare Tunnel" --msgbox \
+    "Cloudflare will now be installed.\n\nYou will be asked to authenticate.\nYou do NOT need to change nameservers." \
+    12 60
+
+    # Install Cloudflare signing key + repo
+    curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg \
+        | tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+
+    echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] \
+https://pkg.cloudflare.com/cloudflared bookworm main" \
+        | tee /etc/apt/sources.list.d/cloudflared.list
+
+    apt update
+    apt install -y cloudflared
+
+    # Ask user for hostname
+    HOSTNAME=$(whiptail --inputbox "Enter Cloudflare hostname (must end with .$DOMAIN):" 12 60 "" \
+        3>&1 1>&2 2>&3)
 
     if [[ "$HOSTNAME" != *".$DOMAIN" ]]; then
         whiptail --title "Error" --msgbox "Hostname must end with .$DOMAIN" 10 60
         return
     fi
 
-    log "Installing Cloudflare..."
-
-    # Install Cloudflare signing key
-    curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
-    echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared bookworm main" | tee /etc/apt/sources.list.d/cloudflared.list
-
-    apt update
-    apt install -y cloudflared
-
-    log "Logging in to Cloudflare..."
+    # Login
+    log "Authenticating Cloudflare..."
     cloudflared tunnel login
 
-    log "Creating new tunnel..."
-    TUNNEL_NAME="$HOSTNAME"
-    cloudflared tunnel create "$TUNNEL_NAME"
+    # Create tunnel
+    log "Creating tunnel..."
+    cloudflared tunnel create "$HOSTNAME"
 
-    UUID=$(cloudflared tunnel list | grep "$TUNNEL_NAME" | awk '{print $1}')
+    UUID=$(cloudflared tunnel list | grep "$HOSTNAME" | awk '{print $1}')
 
     mkdir -p /etc/cloudflared
-    cat > /etc/cloudflared/config.yml <<EOF
+    cat > "$CF_CONFIG" <<EOF
 tunnel: $UUID
 credentials-file: /root/.cloudflared/${UUID}.json
 
@@ -482,7 +553,7 @@ ingress:
   - service: http_status:404
 EOF
 
-    # Create systemd service
+    # systemd service
     cat > /etc/systemd/system/cloudflared.service <<EOF
 [Unit]
 Description=Cloudflare Tunnel
@@ -501,7 +572,9 @@ EOF
     systemctl enable cloudflared
     systemctl restart cloudflared
 
-    whiptail --title "Cloudflare Installed" --msgbox "Cloudflare Tunnel installed.\n\nPublic URL: https://$HOSTNAME" 12 60
+    whiptail --title "Cloudflare Ready" --msgbox \
+    "New Cloudflare Tunnel created.\n\nURL: https://$HOSTNAME" \
+    12 60
 }
 
 # ==================================================================
@@ -701,14 +774,3 @@ post_install_routing() {
     final_summary
 }
 
-# ==================================================================
-# ENTRY POINT
-# ==================================================================
-clear
-whiptail --title "ADA-Pi Systems Installer" --msgbox \
-"Welcome to the ADA-Pi Installer.\n\nThis tool will install:\n\n• Backend\n• Kiosk frontend (optional)\n• Cloudflare or Tailscale (optional)\n• Enable Pi hardware interfaces\n\nPress OK to continue." \
-16 70
-
-while true; do
-    main_menu
-done
