@@ -1,10 +1,8 @@
 flask
 flask-cors
-websockets
+paho-mqtt
 requests
+python-dotenv
 pyserial
-python-systemd
 psutil
-pydbus
-PyGObject
-pyjwt
+websocket-client
