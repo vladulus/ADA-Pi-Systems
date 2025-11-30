@@ -123,6 +123,122 @@ install_backend_full() {
     cp -r "$BACKEND_SRC/"* "$BACKEND_DIR/"
     chown -R root:root "$BACKEND_DIR"
 
+    # =============================================================
+    # PATCH HELPERS.PY (FULL JWT IMPLEMENTATION)
+    # =============================================================
+    log "Patching helpers.py with full JWT implementation..."
+
+    cat > "$BACKEND_DIR/api/helpers.py" << 'EOF'
+import time
+import jwt
+import requests
+from functools import wraps
+from flask import request, jsonify
+
+AUTH_API_URL = "https://www.adasystems.uk/api"
+
+token_cache = {}
+TOKEN_CACHE_DURATION = 300  # 5 minutes
+
+def validate_jwt_with_api(token):
+    cache_key = token[:50]
+    if cache_key in token_cache:
+        cached_data, timestamp = token_cache[cache_key]
+        if time.time() - timestamp < TOKEN_CACHE_DURATION:
+            return cached_data
+
+    try:
+        response = requests.post(
+            f"{AUTH_API_URL}/auth/validate",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=5
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            if result.get("success"):
+                user = result.get("data", {})
+                token_cache[cache_key] = (user, time.time())
+                return user
+
+        return None
+    except Exception as e:
+        print("Token validation error:", e)
+        return None
+
+
+def create_jwt(payload, secret):
+    try:
+        return jwt.encode(payload, secret, algorithm="HS256")
+    except Exception as e:
+        print("JWT create error:", e)
+        return None
+
+
+def decode_jwt_locally(token, secret):
+    try:
+        return jwt.decode(token, secret, algorithms=["HS256"])
+    except Exception as e:
+        print("JWT decode error:", e)
+        return None
+
+
+def is_local_request():
+    return request.remote_addr in ["127.0.0.1", "::1", "localhost"]
+
+
+def require_auth(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+
+        if is_local_request():
+            return f(*args, **kwargs)
+
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return jsonify({"error": "missing_auth"}), 401
+
+        token = auth_header.split(" ", 1)[1]
+
+        user = validate_jwt_with_api(token)
+        if not user:
+            return jsonify({"error": "invalid_token"}), 401
+
+        request.user = user
+        return f(*args, **kwargs)
+
+    return wrapper
+
+
+def has_permission(perm):
+    if is_local_request():
+        return True
+
+    return hasattr(request, "user") and \
+        perm in request.user.get("permissions", [])
+
+
+def has_role(role):
+    if is_local_request():
+        return True
+
+    return hasattr(request, "user") and \
+        request.user.get("role") == role
+
+
+def ok(data=None):
+    return jsonify({"status": "ok", "data": data})
+
+
+def fail(msg):
+    return jsonify({"status": "error", "message": msg}), 400
+EOF
+
+    log "helpers.py updated successfully."
+
+    # =============================================================
+    # CREATE BACKEND SERVICE
+    # =============================================================
     log "Creating backend service..."
     cat > "$SERVICE_FILE" <<EOF
 [Unit]
