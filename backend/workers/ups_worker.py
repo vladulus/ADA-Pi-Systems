@@ -1,10 +1,22 @@
 #!/usr/bin/env python3
 # ADA-Pi UPS Worker with X1202 + Generic support
 
+import importlib
 import time
 import os
 import subprocess
-import smbus
+
+
+def _load_smbus_module():
+    """Return the first available SMBus-compatible module (smbus2 preferred)."""
+    for name in ("smbus2", "smbus"):
+        if importlib.util.find_spec(name) is not None:
+            module = importlib.import_module(name)
+            return module, name
+    return None, None
+
+
+SMBUS_MODULE, SMBUS_MODULE_NAME = _load_smbus_module()
 from logger import logger
 from ipc.router import router
 from config_manager import load_config
@@ -40,7 +52,11 @@ class UPSWorker:
         # load & cache config
         cfg = load_config()
         self.shutdown_pct = cfg.get("ups_shutdown_pct", 10)
-        self.model = cfg.get("ups_model", "auto")
+        self.model = cfg.get("ups_model", "auto").lower()
+
+        # normalize aliases so users can specify "x102" or "x1002" for the Geekworm board
+        if self.model in ("x102", "x1002"):
+            self.model = "x1202"
 
         self._init_i2c()
         self._detect_model()
@@ -50,6 +66,17 @@ class UPSWorker:
     # ------------------------------------------------------------
     def _init_i2c(self):
         """Enable the I²C interface if not already enabled."""
+        # Skip I²C setup entirely when the UPS is explicitly configured as generic
+        # to avoid unnecessary dependency warnings for USB-only setups.
+        if self.model == "generic":
+            self.bus = None
+            return
+
+        if SMBUS_MODULE is None:
+            logger.log("WARN", "No SMBus module (smbus2/smbus) available; skipping I2C initialization. UPSWorker will run in generic mode.")
+            self.bus = None
+            return
+
         try:
             if not os.path.exists("/dev/i2c-1"):
                 logger.log("INFO", "Enabling I2C interface via raspi-config...")
@@ -59,8 +86,8 @@ class UPSWorker:
                 )
                 time.sleep(1)
 
-            self.bus = smbus.SMBus(1)
-            logger.log("INFO", "I2C bus initialized.")
+            self.bus = SMBUS_MODULE.SMBus(1)
+            logger.log("INFO", f"I2C bus initialized using {SMBUS_MODULE_NAME}.")
         except Exception as e:
             logger.log("ERROR", f"Failed to init I2C: {e}")
             self.bus = None
@@ -119,6 +146,9 @@ class UPSWorker:
     # ------------------------------------------------------------
     def _read_x1202(self):
         try:
+            if not self.bus:
+                raise RuntimeError("I2C bus unavailable")
+
             # voltage register (12-bit)
             vcell = self.bus.read_word_data(self.X1202_I2C_ADDR, self.X1202_REG_VCELL)
             vcell = ((vcell & 0xFF) << 8) | (vcell >> 8)

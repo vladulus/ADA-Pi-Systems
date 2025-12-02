@@ -30,8 +30,8 @@ class FanWorker:
 
         self.has_hw_fan = os.path.exists(self.hw_fan_speed_file)
         
-        # FIX: Remove temperature parameter
-        self.fan.update({"supports_hw": self.has_hw_fan})
+        # Track whether hardware fan is available in the module state
+        self.fan.update(supports_hw=self.has_hw_fan)
 
         logger.log("INFO", f"FanWorker initialized (hardware_fan={self.has_hw_fan})")
 
@@ -41,18 +41,19 @@ class FanWorker:
 
         while self.running:
             try:
-                # Read temperature
+                # Read temperature and update module state
                 self.current_temp = self._read_temp()
+                self.fan.update_temperature(self.current_temp)
 
                 # Get fan mode
                 status = self.fan.read_status()
                 
                 if status.get("mode") == "auto":
-                    speed = self._auto_speed(self.current_temp)
-                    self._apply_speed(speed)
+                    speed = self.fan.auto_control()
                 else:  # manual mode
                     speed = status.get("speed", 0)
-                    self._apply_speed(speed)
+
+                self._apply_speed(speed)
 
                 # Publish update with temperature included
                 router.publish("fan_update", {
@@ -110,9 +111,6 @@ class FanWorker:
         """
         Writing speed to hardware fan or fallback PWM.
         """
-        # FIX: Update with dict instead of keyword argument
-        self.fan.update({"speed": percent})
-
         if self.has_hw_fan:
             self._apply_hw_fan(percent)
         else:

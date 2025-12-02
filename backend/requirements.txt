@@ -1,8 +1,10 @@
 flask
 flask-cors
+websockets
 paho-mqtt
 requests
 python-dotenv
 pyserial
 psutil
 websocket-client
+smbus2
