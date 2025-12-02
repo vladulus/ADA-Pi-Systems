@@ -6,7 +6,7 @@ import os
 import time
 import threading
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from logger import logger
 from config_manager import load_config, save_config
 from storage.storage_manager import StorageManager
@@ -26,8 +26,7 @@ from .helpers import (
 # ------------------------------------------------------------
 
 def create_app(modules, storage, ota_manager):
-    import os
-    frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend"))
+    # Create Flask app with NO static configuration
     app = Flask(__name__)
     app.config["JSON_SORT_KEYS"] = False
 
@@ -47,7 +46,7 @@ def create_app(modules, storage, ota_manager):
     @app.post("/api/auth/login")
     def login():
         """
-        Remote requests require username/password — local requests do not.
+        Remote requests require username/password – local requests do not.
         """
         if is_local_request():
             return ok({"token": None})
@@ -64,7 +63,7 @@ def create_app(modules, storage, ota_manager):
         return ok({"token": token})
 
     # ============================================================
-    # SETTINGS — GLOBAL
+    # SETTINGS – GLOBAL
     # ============================================================
     @app.get("/api/settings")
     @require_auth
@@ -84,7 +83,7 @@ def create_app(modules, storage, ota_manager):
         return ok(cfg)
 
     # ============================================================
-    # SETTINGS — SPLIT (API URL, WS URL, Device ID, Cloud, UPS)
+    # SETTINGS – SPLIT (API URL, WS URL, Device ID, Cloud, UPS)
     # ============================================================
     @app.post("/api/settings/api_url")
     @require_auth
@@ -413,22 +412,14 @@ def create_app(modules, storage, ota_manager):
     @app.route("/")
     def index():
         """Serve the main web dashboard"""
-        from flask import send_from_directory
-        import os
-        frontend_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "frontend"))
-        if os.path.exists(os.path.join(frontend_dir, "index.html")):
-            return send_from_directory(frontend_dir, "index.html")
-        else:
-            return jsonify({"error": "Frontend not found", "path": frontend_dir}), 404
+        frontend_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "frontend")
+        return send_from_directory(frontend_dir, "index.html")
 
     @app.route("/static/<path:filename>")
     def serve_static(filename):
-        """Serve static files (CSS, JS, etc.)"""
-        from flask import send_from_directory
-        import os
-        frontend_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "frontend"))
+        """Serve static files (CSS, JS, images, etc.)"""
+        frontend_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "frontend")
         return send_from_directory(frontend_dir, filename)
-
 
     return app
 
