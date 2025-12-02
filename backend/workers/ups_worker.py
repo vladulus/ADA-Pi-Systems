@@ -4,7 +4,10 @@
 import time
 import os
 import subprocess
-import smbus
+try:
+    import smbus
+except ImportError:
+    smbus = None
 from logger import logger
 from ipc.router import router
 from config_manager import load_config
@@ -50,6 +53,11 @@ class UPSWorker:
     # ------------------------------------------------------------
     def _init_i2c(self):
         """Enable the I²C interface if not already enabled."""
+        if smbus is None:
+            logger.log("WARN", "smbus module not available; skipping I2C initialization. UPSWorker will run in generic mode.")
+            self.bus = None
+            return
+
         try:
             if not os.path.exists("/dev/i2c-1"):
                 logger.log("INFO", "Enabling I2C interface via raspi-config...")
