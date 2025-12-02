@@ -2,6 +2,7 @@
 # ADA-Pi UPS Worker with X1202 + Generic support
 
 import importlib
+import importlib.util
 import time
 import os
 import subprocess
