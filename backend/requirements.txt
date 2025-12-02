@@ -8,3 +8,4 @@ pyserial
 psutil
 websocket-client
 smbus2
+dbus-next
