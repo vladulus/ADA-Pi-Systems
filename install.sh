@@ -30,15 +30,9 @@ echo "[2/11] Installing system dependencies…"
 sudo apt install -y \
     python3 python3-pip python3-venv python3-full \
     git curl wget \
-    libatlas-base-dev \
     libffi-dev build-essential \
     python3-serial python3-websocket python3-requests \
-    xdotool unclutter chromium-browser \
-    modemmanager usb-modeswitch \
-    i2c-tools python3-smbus \
-    python3-dbus python3-gi \
-    bluez bluetooth \
-    pkg-config libgirepository1.0-dev
+    xdotool unclutter chromium \
 
 # Enable interfaces and permissions if available
 echo "[3/11] Enabling hardware interfaces and permissions…"
