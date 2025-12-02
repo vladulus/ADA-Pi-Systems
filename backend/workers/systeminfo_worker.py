@@ -1,5 +1,5 @@
-import time
 import os
+import time
 from logger import logger
 from ipc.router import router
 
@@ -48,26 +48,24 @@ class SystemInfoWorker:
         """
 
         cpu_temp = self.get_cpu_temp()
-        cpu_load = self.get_cpu_load()
+        cpu_usage = self.get_cpu_load()
         mem_info = self.get_mem_usage()
-        uptime = self.get_uptime()
         disk_info = self.get_disk_usage()
 
         payload = {
             "cpu_temp": cpu_temp,
-            "cpu_load": cpu_load,
-            "mem_used": mem_info["used"],
-            "mem_total": mem_info["total"],
-            "disk_used": disk_info["used"],
-            "disk_total": disk_info["total"],
-            "uptime": uptime
+            "cpu_usage": cpu_usage,
+            "ram": mem_info,
+            "disk": disk_info,
+            "uptime": self.get_uptime(),
+            "load": os.getloadavg(),
         }
 
-        # Update module - FIX: system is passed directly as parameter
-        self.system.update(payload)
+        # Update module with explicit fields
+        self.system.update(**payload)
 
-        # Push WebSocket event
-        router.publish("system_update", payload)
+        # Push WebSocket event with normalized structure
+        router.publish("system_update", self.system.read_status())
 
     # ------------------------------------------------------------
     # HELPERS
@@ -88,23 +86,19 @@ class SystemInfoWorker:
     # ------------------------------------------------------------
 
     def get_cpu_load(self):
-        """
-        Returns CPU load percentage (0-100).
-        """
+        """Returns CPU load percentage (0-100)."""
 
         try:
-            load1, load5, load15 = os.getloadavg()
-            cores = os.cpu_count()
+            load1, _, _ = os.getloadavg()
+            cores = max(1, os.cpu_count() or 1)
             return round((load1 / cores) * 100, 1)
-        except:
+        except Exception:
             return 0.0
 
     # ------------------------------------------------------------
 
     def get_mem_usage(self):
-        """
-        Read memory usage from /proc/meminfo.
-        """
+        """Read memory usage from /proc/meminfo."""
 
         try:
             info = {}
@@ -116,37 +110,40 @@ class SystemInfoWorker:
             total = info.get("MemTotal", 0) // 1024
             free = info.get("MemAvailable", 0) // 1024
             used = total - free
+            percent = round((used / total) * 100, 1) if total else 0.0
 
-            return {"total": total, "used": used}
+            return {
+                "total": total,
+                "used": used,
+                "free": free,
+                "percent": percent,
+            }
 
-        except:
-            return {"total": 0, "used": 0}
+        except Exception:
+            return {"total": 0, "used": 0, "free": 0, "percent": 0.0}
 
     # ------------------------------------------------------------
 
     def get_uptime(self):
-        """
-        Return uptime in seconds.
-        """
+        """Return uptime in seconds."""
 
         try:
             with open("/proc/uptime") as f:
                 return int(float(f.read().split()[0]))
-        except:
+        except Exception:
             return 0
 
     # ------------------------------------------------------------
 
     def get_disk_usage(self):
-        """
-        Return total/used disk space (MB) for root filesystem.
-        """
+        """Return total/used disk space (MB) for root filesystem."""
 
         try:
             st = os.statvfs("/")
             total = (st.f_blocks * st.f_frsize) // (1024 * 1024)
             free = (st.f_bavail * st.f_frsize) // (1024 * 1024)
             used = total - free
-            return {"total": total, "used": used}
-        except:
-            return {"total": 0, "used": 0}
+            percent = round((used / total) * 100, 1) if total else 0.0
+            return {"total": total, "used": used, "free": free, "percent": percent}
+        except Exception:
+            return {"total": 0, "used": 0, "free": 0, "percent": 0.0}

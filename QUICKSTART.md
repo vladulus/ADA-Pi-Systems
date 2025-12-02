@@ -1,81 +1,83 @@
 # ADA-Pi - Quick Start Guide
 
-**Get your vehicle telematics dashboard running with ONE COMMAND!**
+**Get your ADA-Pi dashboard running from a fresh clone.**
 
 ---
 
-## Installation (ONE COMMAND!)
+## Step-by-step install on Raspberry Pi
 
 ```bash
-# Extract and run installer
-unzip ada-pi-complete.zip
-cd ada-pi-complete
+# 1) Clone the repo
+cd ~
+git clone https://github.com/your-org/ADA-Pi-Systems.git
+cd ADA-Pi-Systems
+
+# 2) (Optional) provide a Tailscale auth key for non-interactive login
+# export TS_AUTHKEY="tskey-xxxxxxxxxxxxxxxx"
+
+# 3) Run the installer (prompts for headless vs. kiosk)
 sudo bash install.sh
 ```
 
-**That's it!** The installer does EVERYTHING:
-- ✅ Installs all dependencies
-- ✅ Installs Python packages  
-- ✅ Installs Tailscale
-- ✅ Configures firewall
-- ✅ Creates service
-- ✅ Starts everything
-
-**No additional steps needed!** 🎉
+What the installer does for you:
+- Installs system dependencies (Python toolchain, modem/I²C/Bluetooth support, kiosk prerequisites)
+- Builds the virtualenv from `backend/requirements.txt`
+- Seeds `/etc/ada_pi/config.json` and runtime directories
+- Enables and starts `ada-pi-backend.service` (and kiosk service when selected)
+- Installs and optionally logs into Tailscale (interactive or with `TS_AUTHKEY`)
 
 ---
 
-## Remote Access (2 Minutes)
-
-Installer already installed Tailscale! Just connect:
+## Verify it’s running
 
 ```bash
-# Connect to Tailscale
-sudo tailscale up
+# Backend service status
+sudo systemctl status ada-pi-backend
 
-# Get your Tailscale IP
-tailscale ip -4
+# Tail the backend logs
+sudo journalctl -u ada-pi-backend -f
 
-# Access from anywhere!
-# http://100.x.x.x:8000
+# Check HTTP API locally
+curl http://localhost:8000/api/gps
 ```
 
----
-
-## What You Get
-
-- 📊 Dashboard with system overview
-- 🗺️ GPS tracking (speed, location)
-- 🚗 OBD diagnostics (RPM, temp)
-- 💻 System monitoring
-- 🔋 Battery status
-- 🌐 Network info
-- Plus: Logs, Settings, and more
+From another device on the same network, open:
+- `http://<pi-ip>:8000` (dashboard)
+- DevTools Console should show a connected WebSocket and live updates
 
 ---
 
-## Default Login
+## Remote access with Tailscale
 
-**Username:** `admin`  
-**Password:** `admin`
-
-⚠️ Change in: `/opt/ada-pi/backend/config.json`
-
----
-
-## Useful Commands
+If you exported `TS_AUTHKEY`, the installer logs in automatically. Otherwise:
 
 ```bash
-# Status
-sudo systemctl status ada-pi
+sudo tailscale up  # interactive login
 
-# Logs
-sudo journalctl -u ada-pi -f
-
-# Restart
-sudo systemctl restart ada-pi
+tailscale ip -4    # get the Pi's Tailscale IP
 ```
 
+Then browse to `http://<tailscale-ip>:8000` from any Tailscale-connected device.
+
 ---
+
+## Default credentials
+
+- **Username:** `admin`
+- **Password:** `admin`
+
+Change them in `/etc/ada_pi/config.json` after installation.
+
+---
+
+## Useful commands
+
+```bash
+# Restart backend
+sudo systemctl restart ada-pi-backend
+
+# Restart kiosk (if enabled)
+sudo systemctl restart ada-pi-kiosk
+```
 
 **Happy tracking! 🚗💨**

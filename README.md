@@ -14,6 +14,7 @@ This package contains all the critical fixes for the ADA-Pi system:
 - ✅ Added `from ipc.router import router` import
 - ✅ Added `router.publish("modem_update", data)` to broadcast updates
 - ✅ Now modem data flows to frontend via WebSocket
+- ℹ️  The active worker lives at `backend/workers/modem_worker.py`; backup copies (`*.bak`) were removed to avoid confusion, but the modem functionality remains intact.
 
 ### 3. Requirements (backend/requirements.txt)
 - ✅ Removed `modemmanager` (system package, not pip)
@@ -27,62 +28,27 @@ This package contains all the critical fixes for the ADA-Pi system:
 - ✅ Increased wait times for service startup
 - ✅ Better status messages
 
-## How to Apply
+## How to Apply (from this repository)
 
-### On Raspberry Pi:
-
-```bash
-# 1. Stop the backend
-sudo systemctl stop ada-pi-backend
-
-# 2. Go to your ADA-Pi directory
-cd ~/ADA-Pi-Systems
-
-# 3. Extract the fixes (upload ada-pi-fixes.zip to Pi first)
-unzip -o ~/ada-pi-fixes.zip
-
-# 4. Copy files to their locations
-cp -f backend/workers/modem_worker.py backend/workers/
-cp -f backend/requirements.txt backend/
-cp -f frontend/js/app.js frontend/js/
-cp -f install.sh ./
-
-# 5. Copy to installation directory
-sudo cp -f backend/workers/modem_worker.py /opt/ada-pi/backend/workers/
-sudo cp -f frontend/js/app.js /opt/ada-pi/frontend/js/
-
-# 6. Restart backend
-sudo systemctl restart ada-pi-backend
-
-# 7. Test in browser
-# Open http://[pi-ip]:8000
-# Press F12 and check console for:
-#   ✓ WebSocket connected successfully
-#   WebSocket received: messages
-```
-
-### Commit to GitHub:
+### Fresh install on Raspberry Pi
 
 ```bash
-cd ~/ADA-Pi-Systems
+# 1) Clone the repo
+cd ~
+git clone https://github.com/your-org/ADA-Pi-Systems.git
+cd ADA-Pi-Systems
 
-# Add all fixed files
-git add backend/workers/modem_worker.py
-git add backend/requirements.txt
-git add frontend/js/app.js
-git add install.sh
+# 2) (Optional) export Tailscale auth key for non-interactive login
+# export TS_AUTHKEY="tskey-xxxxxxxxxxxxxxxx"
 
-# Commit
-git commit -m "Fix: WebSocket event mapping, modem publishing, requirements, installer
-
-- Frontend: Fixed WebSocket event mapping so data displays correctly
-- Modem worker: Added router.publish() to broadcast updates  
-- Requirements: Removed system packages (modemmanager, bluez)
-- Installer: Added all dependencies, fixed service name, better logging"
-
-# Push
-git push
+# 3) Run the installer (prompts for headless or kiosk)
+sudo bash install.sh
 ```
+
+After the installer finishes:
+- Check the backend: `sudo systemctl status ada-pi-backend`
+- Tail logs: `sudo journalctl -u ada-pi-backend -f`
+- Dashboard: browse to `http://<pi-ip>:8000` (or Tailscale IP) and verify the WebSocket shows connected in DevTools.
 
 ## Files Included
 
