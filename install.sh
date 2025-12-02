@@ -238,7 +238,7 @@ echo ""
 echo -e "${BLUE}[6/12] Creating Python virtual environment...${NC}"
 
 cd /opt/ada-pi
-sudo -u "$INSTALL_USER" python3 -m venv venv
+sudo -u "$INSTALL_USER" python3 -m venv --system-site-packages venv
 
 echo -e "${GREEN}✓ Virtual environment created${NC}"
 echo ""
