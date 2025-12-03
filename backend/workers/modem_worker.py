@@ -12,8 +12,9 @@ from ipc.router import router
 class ModemWorker:
     REFRESH = 5   # seconds
 
-    def __init__(self, module):
+    def __init__(self, module, config=None):
         self.module = module
+        self.config = config or {}
         self.running = True
         self.engine = ATCommandEngine()
 
@@ -79,11 +80,33 @@ class ModemWorker:
     # Auto-detect modem & AT port
     # ------------------------------------------------------------
     def _ensure_modem_connected(self):
-        """Find and connect to correct /dev/ttyUSB* AT port."""
+        """Find and connect to correct /dev/ttyUSB* AT port or use configured port."""
 
+        # If already connected and working, return
         if self.engine.ser and self.engine.test():
             return True
 
+        # Check if specific port is configured
+        modem_config = self.config.get("modem", {})
+        config_port = modem_config.get("port")
+        
+        if config_port and os.path.exists(config_port):
+            logger.log("INFO", f"Using configured modem port: {config_port}")
+            if self.engine.connect(config_port):
+                if self.engine.test():
+                    self.module.at_port = config_port
+                    logger.log("INFO", f"Modem detected on {config_port}")
+                    return True
+                self.engine.disconnect()
+            logger.log("ERROR", f"Failed to connect to configured port {config_port}")
+            # If configured port fails, don't scan - report error
+            self.module.update({
+                "connected": False,
+                "error": f"Modem not detected on configured port {config_port}"
+            })
+            return False
+
+        # Auto-scan if no port configured
         logger.log("INFO", "Searching for modem AT port...")
 
         for i in range(0, 10):
@@ -132,6 +155,9 @@ class ModemWorker:
             if "RM" in line:
                 model = "RM Series (5G)"
 
+        # Cache brand for signal function
+        self.brand = brand
+        
         return {
             "brand": brand,
             "model": model
@@ -245,22 +271,43 @@ class ModemWorker:
     # SIGNAL STRENGTH
     # ------------------------------------------------------------
     def _get_signal(self):
-        """Uses QCSQ for detailed LTE/5G signal."""
-        resp = self.engine.send("AT+QCSQ")
+        """Get signal strength - uses CSQ for SIMCom, QCSQ for Quectel."""
         rssi = rsrp = rsrq = sinr = None
+        
+        # Check if SIMCom modem
+        if hasattr(self, 'brand') and self.brand == "SIMCom":
+            # Use AT+CSQ for SIMCom modems
+            resp = self.engine.send("AT+CSQ")
+            
+            for line in resp:
+                if "+CSQ:" in line:
+                    parts = line.split(":")
+                    if len(parts) >= 2:
+                        values = parts[1].strip().split(",")
+                        if len(values) >= 1:
+                            try:
+                                csq = int(values[0])
+                                if csq != 99:  # 99 = unknown
+                                    # Convert CSQ (0-31) to dBm
+                                    rssi = -113 + (csq * 2)
+                            except:
+                                pass
+        else:
+            # Use AT+QCSQ for Quectel modems
+            resp = self.engine.send("AT+QCSQ")
 
-        for line in resp:
-            if "+QCSQ:" in line:
-                parts = line.split(",")
-                # Example: +QCSQ: "LTE",-65,-95,-7,21
-                if len(parts) >= 5:
-                    try:
-                        rssi = int(parts[1])
-                        rsrp = int(parts[2])
-                        rsrq = int(parts[3])
-                        sinr = int(parts[4])
-                    except:
-                        pass
+            for line in resp:
+                if "+QCSQ:" in line:
+                    parts = line.split(",")
+                    # Example: +QCSQ: "LTE",-65,-95,-7,21
+                    if len(parts) >= 5:
+                        try:
+                            rssi = int(parts[1])
+                            rsrp = int(parts[2])
+                            rsrq = int(parts[3])
+                            sinr = int(parts[4])
+                        except:
+                            pass
 
         return {
             "rssi": rssi,

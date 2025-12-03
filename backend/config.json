@@ -1,31 +1,39 @@
 {
-  "device_id": "ada-pi-001",
-  "api": {
-    "host": "0.0.0.0",
-    "port": 8000
-  },
-  "websocket": {
-    "host": "0.0.0.0",
-    "port": 9000
-  },
-  "auth": {
-    "username": "adasystem_vlad",
-    "password": "&D1i$QwG86ollton"
-  },
-  "gps": {
-    "unit_mode": "auto",
-    "port": "/dev/ttyUSB1"
-  },
-  "ups": {
-    "enabled": true,
-    "i2c_address": "0x36"
-  },
-  "modem": {
-    "enabled": true,
-    "apn": "internet"
-  },
-  "cloud": {
-    "enabled": false,
-    "url": ""
-  }
+    "device_id": "ada-pi-001",
+    "api_url": "http://192.168.1.30:8000",
+    "ws_url": "ws://192.168.1.30:9000",
+    "auth": {
+        "username": "admin",
+        "password": "changeme"
+    },
+    "cloud": {
+        "upload_url": "https://www.adasystems.uk/api/telemetry/upload",
+        "logs_url": "https://www.adasystems.uk/api/logs/upload"
+    },
+    "gps": {
+        "unit_mode": "auto",
+        "port": "/dev/modem-gps",
+        "baudrate": 9600
+    },
+    "ups": {
+        "shutdown_pct": 10,
+        "i2c_address": "0x36"
+    },
+    "modem": {
+        "port": "/dev/modem-at",
+        "gps_port": "/dev/modem-gps",
+        "auto_scan": false,
+        "baudrate": 115200
+    },
+    "obd": {
+        "enabled": true,
+        "bluetooth_mac": ""
+    },
+    "tacho": {
+        "enabled": false,
+        "upload_interval": 300
+    },
+    "network": {
+        "wifi_country": "GB"
+    }
 }

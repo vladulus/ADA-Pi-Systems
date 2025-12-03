@@ -7,6 +7,9 @@ import signal
 import time
 from logger import logger
 
+# Config
+from config_manager import load_config
+
 # Modules
 from modules.ups.module import UPSModule
 from modules.network.module import NetworkModule
@@ -52,6 +55,11 @@ class BackendEngine:
         logger.log("INFO", "Initializing backend engine...")
 
         # --------------------------------------------------------
+        # LOAD CONFIG
+        # --------------------------------------------------------
+        self.config = load_config()
+
+        # --------------------------------------------------------
         # INIT MODULES
         # --------------------------------------------------------
         self.modules = {
@@ -83,7 +91,7 @@ class BackendEngine:
         self.workers = [
             UPSWorker(self.modules["ups"]),
             NetworkWorker(self.modules["network"]),
-            ModemWorker(self.modules["modem"]),
+            ModemWorker(self.modules["modem"], self.config),
             GPSWorker(self.modules["gps"]),
             BluetoothWorker(self.modules["bluetooth"]),
             LogsWorker(self.modules["logs"]),
