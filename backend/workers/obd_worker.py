@@ -11,17 +11,13 @@ from workers.obd_pid_decoder import PIDDecoder
 
 
 class OBDWorker:
-    PORT_SCAN = [
-        *[f"/dev/ttyUSB{i}" for i in range(0, 10)],
-        *[f"/dev/ttyACM{i}" for i in range(0, 10)]
-    ]
-
     BAUD_RATES = [115200, 38400, 9600, 230400]
 
     POLL_INTERVAL = 2  # seconds
 
-    def __init__(self, module):
+    def __init__(self, module, config=None):
         self.obd = module
+        self.config = config or {}
         self.running = True
         self.ser = None
         self.decoder = PIDDecoder()
@@ -32,6 +28,40 @@ class OBDWorker:
 
         # API flag: /api/obd/clear
         self.request_clear = False
+        
+        # Build port scan list from config
+        self._build_port_list()
+
+    # ------------------------------------------------------------
+    def _build_port_list(self):
+        """Build list of ports to scan based on config."""
+        obd_config = self.config.get("obd", {})
+        
+        # Check if specific port is configured
+        config_port = obd_config.get("port")
+        if config_port:
+            # Use only the configured port
+            self.PORT_SCAN = [config_port]
+            logger.log("INFO", f"OBD configured to use only: {config_port}")
+            return
+        
+        # Default: scan all USB/ACM ports
+        all_ports = [
+            *[f"/dev/ttyUSB{i}" for i in range(0, 10)],
+            *[f"/dev/ttyACM{i}" for i in range(0, 10)]
+        ]
+        
+        # Exclude modem ports by default
+        excluded = obd_config.get("excluded_ports", [
+            "/dev/ttyUSB2",  # Modem AT port
+            "/dev/ttyUSB3",  # Modem GPS port
+            "/dev/modem-at",
+            "/dev/modem-gps"
+        ])
+        
+        # Filter out excluded ports
+        self.PORT_SCAN = [p for p in all_ports if p not in excluded]
+        logger.log("INFO", f"OBD will scan {len(self.PORT_SCAN)} ports (excluding modem)")
 
     # ------------------------------------------------------------
     def start(self):
