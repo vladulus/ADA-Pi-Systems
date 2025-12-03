@@ -27,7 +27,7 @@ from .helpers import (
 
 def create_app(modules, storage, ota_manager):
     # Create Flask app with NO static configuration
-    app = Flask(__name__)
+    app = Flask(__name__, static_folder=None, static_url_path=None)
     app.config["JSON_SORT_KEYS"] = False
 
     # Attach backend objects
