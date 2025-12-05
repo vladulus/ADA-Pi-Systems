@@ -33,11 +33,10 @@ from workers.tacho_worker import TachoWorker
 from workers.tacho_uploader import TachoUploader
 from workers.fan_worker import FanWorker
 from workers.obd_worker import OBDWorker
-from modules.systeminfo.module import SystemInfoWorker
+from workers.systeminfo_worker import SystemInfoWorker
 from workers.cloud_uploader import CloudUploader
 from workers.rotation_worker import RotationWorker
 from workers.ota_worker import OTAWorker
-
 # Storage
 from storage.storage_manager import StorageManager
 
