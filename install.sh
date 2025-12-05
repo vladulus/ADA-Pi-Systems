@@ -65,9 +65,15 @@ while [[ "$VPN_CHOICE" != "1" && "$VPN_CHOICE" != "2" && "$VPN_CHOICE" != "3" ]]
 done
 echo ""
 
+# Ask ADA Systems API base URL
+read -r -p "ADA Systems API base URL (ex: https://ada.impulsive.ro) [default: http://127.0.0.1:8000]: " ADA_API_BASE_URL
+ADA_API_BASE_URL=${ADA_API_BASE_URL:-http://127.0.0.1:8000}
+echo ""
+
 echo -e "${GREEN}Configuration:${NC}"
 echo "  Display Mode: $([ "$MODE" == "1" ] && echo "Headless" || echo "Kiosk")"
 echo "  VPN: $([ "$VPN_CHOICE" == "1" ] && echo "Tailscale" || ([ "$VPN_CHOICE" == "2" ] && echo "OpenVPN" || echo "None"))"
+echo "  ADA API URL: $ADA_API_BASE_URL"
 echo ""
 read -p "Press Enter to continue or Ctrl+C to abort..."
 echo ""
@@ -82,9 +88,10 @@ echo -e "${GREEN}✓ System updated${NC}"
 echo ""
 
 # ============================================
-# STEP 2: INSTALL SYSTEM DEPENDENCIES
+# STEP 2: INSTALL DEPENDENCIES
 # ============================================
 echo -e "${BLUE}[2/12] Installing system dependencies...${NC}"
+
 apt install -y \
     python3 \
     python3-pip \
@@ -93,7 +100,6 @@ apt install -y \
     git \
     curl \
     wget \
-    libffi-dev \
     build-essential \
     python3-serial \
     python3-websocket \
@@ -163,12 +169,9 @@ cp -r backend /opt/ada-pi/
 cp -r frontend /opt/ada-pi/
 chown -R "$INSTALL_USER":"$INSTALL_USER" /opt/ada-pi
 
-# Runtime data directories
-mkdir -p /var/lib/ada-pi/{logs,storage,tacho,ota}
-chown -R "$INSTALL_USER":"$INSTALL_USER" /var/lib/ada-pi
-
-# Symlink storage to backend
-ln -sf /var/lib/ada-pi /opt/ada-pi/backend/storage
+# Runtime data directories (used by StorageManager)
+mkdir -p /opt/ada-pi/data/{logs,tacho,ota,tmp}
+chown -R "$INSTALL_USER":"$INSTALL_USER" /opt/ada-pi/data
 
 echo -e "${GREEN}✓ Directories created${NC}"
 echo ""
@@ -179,13 +182,14 @@ echo ""
 echo -e "${BLUE}[5/12] Creating default configuration...${NC}"
 
 # Create config directory
-mkdir -p /opt/ada-pi/backend
+mkdir -p /etc/ada_pi
+chown "$INSTALL_USER":"$INSTALL_USER" /etc/ada_pi
 
 # Get local IP
 LOCAL_IP=$(hostname -I | awk '{print $1}')
 
 # Create config.json
-cat > /opt/ada-pi/backend/config.json <<CONFIG
+cat > /etc/ada_pi/config.json <<CONFIG
 {
     "device_id": "ada-pi-001",
     "api_url": "http://${LOCAL_IP}:8000",
@@ -225,8 +229,8 @@ cat > /opt/ada-pi/backend/config.json <<CONFIG
 }
 CONFIG
 
-chown "$INSTALL_USER":"$INSTALL_USER" /opt/ada-pi/backend/config.json
-chmod 600 /opt/ada-pi/backend/config.json
+chown "$INSTALL_USER":"$INSTALL_USER" /etc/ada_pi/config.json
+chmod 600 /etc/ada_pi/config.json
 
 echo -e "${GREEN}✓ Configuration created${NC}"
 echo -e "${YELLOW}⚠ Default password is 'changeme' - change it after installation!${NC}"
@@ -240,7 +244,7 @@ echo -e "${BLUE}[6/12] Creating Python virtual environment...${NC}"
 cd /opt/ada-pi
 sudo -u "$INSTALL_USER" python3 -m venv --system-site-packages venv
 
-echo -e "${GREEN}✓ Virtual environment created${NC}"
+echo -e "${GREEN}✓ Virtual environment created at /opt/ada-pi/venv${NC}"
 echo ""
 
 # ============================================
@@ -281,6 +285,7 @@ Group=$INSTALL_USER
 WorkingDirectory=/opt/ada-pi/backend
 Environment=PYTHONUNBUFFERED=1
 Environment=HOME=$INSTALL_HOME
+Environment=ADA_API_BASE_URL=$ADA_API_BASE_URL
 ExecStart=/opt/ada-pi/venv/bin/python3 /opt/ada-pi/backend/main.py
 Restart=always
 RestartSec=10
@@ -354,45 +359,43 @@ if [ "$VPN_CHOICE" == "1" ]; then
     echo ""
     
 elif [ "$VPN_CHOICE" == "2" ]; then
-    # OpenVPN client setup
     echo -e "${BLUE}Installing OpenVPN client...${NC}"
     apt install -y openvpn
     
-    mkdir -p /etc/openvpn/client
-    
     echo ""
-    echo -e "${YELLOW}OpenVPN client installed.${NC}"
-    echo "To connect to your VPN server:"
-    echo "  1. Copy your .ovpn config to: /etc/openvpn/client/ada-pi.conf"
-    echo "  2. Start: sudo systemctl start openvpn-client@ada-pi"
-    echo "  3. Enable: sudo systemctl enable openvpn-client@ada-pi"
+    echo -e "${YELLOW}OpenVPN installed.${NC}"
+    echo "  Place your client config at: /etc/openvpn/client/ada-pi.conf"
+    echo "  Then start with: sudo systemctl start openvpn-client@ada-pi"
     echo ""
-    
 else
-    echo -e "${YELLOW}No VPN configured - local network access only${NC}"
+    echo -e "${BLUE}Skipping VPN configuration (none selected).${NC}"
 fi
+
+echo -e "${GREEN}✓ Remote access step complete${NC}"
 echo ""
 
 # ============================================
-# STEP 11: START ADA-PI SERVICE
+# STEP 11: START SERVICE
 # ============================================
 echo -e "${BLUE}[11/12] Starting ADA-Pi service...${NC}"
 
-systemctl start ada-pi.service
+systemctl start ada-pi.service || true
 sleep 3
 
-# Check if service started successfully
-if systemctl is-active --quiet ada-pi.service; then
-    echo -e "${GREEN}✓ ADA-Pi service started successfully${NC}"
+STATUS=$(systemctl is-active ada-pi.service || true)
+if [ "$STATUS" == "active" ]; then
+    echo -e "${GREEN}✓ ada-pi.service is running${NC}"
 else
-    echo -e "${RED}✗ ADA-Pi service failed to start${NC}"
+    echo -e "${RED}⚠ ada-pi.service is not running. Check logs with:${NC}"
+    echo "  sudo journalctl -u ada-pi -e"
     echo ""
-    echo "Checking logs:"
-    journalctl -u ada-pi.service -n 20 --no-pager
-    echo ""
-    echo -e "${RED}Installation completed with errors. Please check the logs above.${NC}"
-    exit 1
 fi
+
+echo ""
+echo -e "${BLUE}Quick service commands:${NC}"
+echo "  sudo systemctl status ada-pi"
+echo "  sudo systemctl restart ada-pi"
+echo "  sudo journalctl -u ada-pi -f"
 echo ""
 
 # ============================================
@@ -408,16 +411,16 @@ PORT_9000=$(netstat -tuln 2>/dev/null | grep ":9000 " || ss -tuln 2>/dev/null | 
 if [ -n "$PORT_8000" ]; then
     echo -e "${GREEN}✓ REST API listening on port 8000${NC}"
 else
-    echo -e "${RED}✗ REST API not listening on port 8000${NC}"
+    echo -e "${YELLOW}⚠ REST API not detected on port 8000${NC}"
 fi
 
 if [ -n "$PORT_9000" ]; then
     echo -e "${GREEN}✓ WebSocket listening on port 9000${NC}"
 else
-    echo -e "${RED}✗ WebSocket not listening on port 9000${NC}"
+    echo -e "${YELLOW}⚠ WebSocket not detected on port 9000${NC}"
 fi
 
-# Test HTTP endpoint
+# Simple API health check (does not check auth)
 if curl -s http://localhost:8000/api/system/info >/dev/null 2>&1; then
     echo -e "${GREEN}✓ API responding to requests${NC}"
 else
@@ -446,8 +449,8 @@ echo "  Restart:  sudo systemctl restart ada-pi"
 echo "  Logs:     sudo journalctl -u ada-pi -f"
 echo ""
 echo -e "${GREEN}Configuration:${NC}"
-echo "  Config:   /opt/ada-pi/backend/config.json"
-echo "  Data:     /var/lib/ada-pi/"
+echo "  Config:   /etc/ada_pi/config.json"
+echo "  Data:     /opt/ada-pi/data/"
 echo ""
 echo -e "${YELLOW}IMPORTANT:${NC}"
 echo "  1. Default password is 'changeme' - CHANGE IT NOW!"
@@ -459,6 +462,7 @@ if [ "$VPN_CHOICE" == "1" ]; then
     echo -e "${YELLOW}Next Steps (Tailscale):${NC}"
     echo "  sudo tailscale up"
     echo "  sudo tailscale funnel 8000"
+    echo "  sudo tailscale funnel 9000"
     echo ""
 fi
 
@@ -466,13 +470,6 @@ if [ "$VPN_CHOICE" == "2" ]; then
     echo -e "${YELLOW}Next Steps (OpenVPN):${NC}"
     echo "  1. Copy your .ovpn file to /etc/openvpn/client/ada-pi.conf"
     echo "  2. sudo systemctl start openvpn-client@ada-pi"
-    echo ""
-fi
-
-if [ "$MODE" == "2" ]; then
-    echo -e "${YELLOW}Kiosk Mode:${NC}"
-    echo "  Chromium will auto-start on next reboot"
-    echo "  Or start now: sudo systemctl start ada-pi-kiosk"
     echo ""
 fi
 
