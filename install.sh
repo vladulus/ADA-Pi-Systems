@@ -51,29 +51,21 @@ while [[ "$MODE" != "1" && "$MODE" != "2" ]]; do
 done
 echo ""
 
-# Ask VPN choice
-VPN_CHOICE=""
-while [[ "$VPN_CHOICE" != "1" && "$VPN_CHOICE" != "2" && "$VPN_CHOICE" != "3" ]]; do
-    echo "Choose remote access method:"
-    echo "  1) Tailscale (easiest, cloud-based)"
-    echo "  2) OpenVPN (self-hosted, requires VPN server)"
-    echo "  3) None (local network only)"
-    read -r -p "Enter 1, 2, or 3: " VPN_CHOICE
-    if [[ "$VPN_CHOICE" != "1" && "$VPN_CHOICE" != "2" && "$VPN_CHOICE" != "3" ]]; then
-        echo -e "${YELLOW}Please enter 1, 2, or 3${NC}"
-    fi
-done
-echo ""
-
 # Ask ADA Systems API base URL
 read -r -p "ADA Systems API base URL (ex: https://ada.impulsive.ro) [default: http://127.0.0.1:8000]: " ADA_API_BASE_URL
 ADA_API_BASE_URL=${ADA_API_BASE_URL:-http://127.0.0.1:8000}
 echo ""
 
+# Ask device name (Pi name in dashboard)
+DEFAULT_DEVICE_NAME="$(hostname)"
+read -r -p "Device name (Pi name in ADA dashboard) [default: $DEFAULT_DEVICE_NAME]: " DEVICE_NAME
+DEVICE_NAME=${DEVICE_NAME:-$DEFAULT_DEVICE_NAME}
+echo ""
+
 echo -e "${GREEN}Configuration:${NC}"
 echo "  Display Mode: $([ "$MODE" == "1" ] && echo "Headless" || echo "Kiosk")"
-echo "  VPN: $([ "$VPN_CHOICE" == "1" ] && echo "Tailscale" || ([ "$VPN_CHOICE" == "2" ] && echo "OpenVPN" || echo "None"))"
-echo "  ADA API URL: $ADA_API_BASE_URL"
+echo "  ADA API URL:  $ADA_API_BASE_URL"
+echo "  Device name:  $DEVICE_NAME"
 echo ""
 read -p "Press Enter to continue or Ctrl+C to abort..."
 echo ""
@@ -81,7 +73,7 @@ echo ""
 # ============================================
 # STEP 1: UPDATE SYSTEM
 # ============================================
-echo -e "${BLUE}[1/12] Updating system...${NC}"
+echo -e "${BLUE}[1/11] Updating system...${NC}"
 apt update -y
 apt upgrade -y
 echo -e "${GREEN}✓ System updated${NC}"
@@ -90,7 +82,7 @@ echo ""
 # ============================================
 # STEP 2: INSTALL DEPENDENCIES
 # ============================================
-echo -e "${BLUE}[2/12] Installing system dependencies...${NC}"
+echo -e "${BLUE}[2/11] Installing system dependencies...${NC}"
 
 apt install -y \
     python3 \
@@ -114,7 +106,9 @@ apt install -y \
     bluetooth \
     pkg-config \
     libgirepository1.0-dev \
-    network-manager
+    network-manager \
+    net-tools \
+    iproute2
 
 # Install display dependencies if kiosk mode
 if [ "$MODE" == "2" ]; then
@@ -133,9 +127,9 @@ echo ""
 # ============================================
 # STEP 3: ENABLE HARDWARE INTERFACES
 # ============================================
-echo -e "${BLUE}[3/12] Enabling hardware interfaces...${NC}"
+echo -e "${BLUE}[3/11] Enabling hardware interfaces...${NC}"
 
-# Enable I2C
+# Enable I2C & Serial on Raspberry Pi (if raspi-config exists)
 if command -v raspi-config >/dev/null 2>&1; then
     raspi-config nonint do_i2c 0 || true
     raspi-config nonint do_serial_hw 0 || true
@@ -152,7 +146,7 @@ echo ""
 # ============================================
 # STEP 4: CREATE DIRECTORIES
 # ============================================
-echo -e "${BLUE}[4/12] Creating installation directories...${NC}"
+echo -e "${BLUE}[4/11] Creating installation directories...${NC}"
 
 # Main installation directory
 mkdir -p /opt/ada-pi
@@ -179,7 +173,7 @@ echo ""
 # ============================================
 # STEP 5: CREATE DEFAULT CONFIGURATION
 # ============================================
-echo -e "${BLUE}[5/12] Creating default configuration...${NC}"
+echo -e "${BLUE}[5/11] Creating default configuration...${NC}"
 
 # Create config directory
 mkdir -p /etc/ada_pi
@@ -191,7 +185,7 @@ LOCAL_IP=$(hostname -I | awk '{print $1}')
 # Create config.json
 cat > /etc/ada_pi/config.json <<CONFIG
 {
-    "device_id": "ada-pi-001",
+    "device_id": "$DEVICE_NAME",
     "api_url": "http://${LOCAL_IP}:8000",
     "ws_url": "ws://${LOCAL_IP}:9000",
     "auth": {
@@ -239,7 +233,7 @@ echo ""
 # ============================================
 # STEP 6: CREATE PYTHON VIRTUAL ENVIRONMENT
 # ============================================
-echo -e "${BLUE}[6/12] Creating Python virtual environment...${NC}"
+echo -e "${BLUE}[6/11] Creating Python virtual environment...${NC}"
 
 cd /opt/ada-pi
 sudo -u "$INSTALL_USER" python3 -m venv --system-site-packages venv
@@ -250,7 +244,7 @@ echo ""
 # ============================================
 # STEP 7: INSTALL PYTHON DEPENDENCIES
 # ============================================
-echo -e "${BLUE}[7/12] Installing Python dependencies...${NC}"
+echo -e "${BLUE}[7/11] Installing Python dependencies...${NC}"
 
 # Upgrade pip first
 sudo -u "$INSTALL_USER" /opt/ada-pi/venv/bin/pip install --upgrade pip
@@ -269,7 +263,7 @@ echo ""
 # ============================================
 # STEP 8: CREATE SYSTEMD SERVICE
 # ============================================
-echo -e "${BLUE}[8/12] Creating systemd service...${NC}"
+echo -e "${BLUE}[8/11] Creating systemd service...${NC}"
 
 cat > /etc/systemd/system/ada-pi.service <<SERVICE
 [Unit]
@@ -310,7 +304,7 @@ echo ""
 # STEP 9: CONFIGURE KIOSK MODE (if selected)
 # ============================================
 if [ "$MODE" == "2" ]; then
-    echo -e "${BLUE}[9/12] Configuring kiosk mode...${NC}"
+    echo -e "${BLUE}[9/11] Configuring kiosk mode...${NC}"
     
     cat > /etc/systemd/system/ada-pi-kiosk.service <<KIOSK
 [Unit]
@@ -335,49 +329,14 @@ KIOSK
     systemctl enable ada-pi-kiosk.service
     echo -e "${GREEN}✓ Kiosk mode configured${NC}"
 else
-    echo -e "${BLUE}[9/12] Skipping kiosk mode (headless selected)${NC}"
+    echo -e "${BLUE}[9/11] Skipping kiosk mode (headless selected)${NC}"
 fi
 echo ""
 
 # ============================================
-# STEP 10: CONFIGURE VPN
+# STEP 10: START SERVICE
 # ============================================
-echo -e "${BLUE}[10/12] Configuring remote access...${NC}"
-
-if [ "$VPN_CHOICE" == "1" ]; then
-    # Install Tailscale
-    echo -e "${BLUE}Installing Tailscale...${NC}"
-    curl -fsSL https://tailscale.com/install.sh | sh
-    
-    echo ""
-    echo -e "${YELLOW}Tailscale installed. To activate:${NC}"
-    echo "  sudo tailscale up"
-    echo ""
-    echo "Then enable funnel for remote access:"
-    echo "  sudo tailscale funnel 8000"
-    echo "  sudo tailscale funnel 9000"
-    echo ""
-    
-elif [ "$VPN_CHOICE" == "2" ]; then
-    echo -e "${BLUE}Installing OpenVPN client...${NC}"
-    apt install -y openvpn
-    
-    echo ""
-    echo -e "${YELLOW}OpenVPN installed.${NC}"
-    echo "  Place your client config at: /etc/openvpn/client/ada-pi.conf"
-    echo "  Then start with: sudo systemctl start openvpn-client@ada-pi"
-    echo ""
-else
-    echo -e "${BLUE}Skipping VPN configuration (none selected).${NC}"
-fi
-
-echo -e "${GREEN}✓ Remote access step complete${NC}"
-echo ""
-
-# ============================================
-# STEP 11: START SERVICE
-# ============================================
-echo -e "${BLUE}[11/12] Starting ADA-Pi service...${NC}"
+echo -e "${BLUE}[10/11] Starting ADA-Pi service...${NC}"
 
 systemctl start ada-pi.service || true
 sleep 3
@@ -399,9 +358,9 @@ echo "  sudo journalctl -u ada-pi -f"
 echo ""
 
 # ============================================
-# STEP 12: VERIFY INSTALLATION
+# STEP 11: VERIFY INSTALLATION
 # ============================================
-echo -e "${BLUE}[12/12] Verifying installation...${NC}"
+echo -e "${BLUE}[11/11] Verifying installation...${NC}"
 
 # Check if ports are listening
 sleep 2
@@ -449,30 +408,15 @@ echo "  Restart:  sudo systemctl restart ada-pi"
 echo "  Logs:     sudo journalctl -u ada-pi -f"
 echo ""
 echo -e "${GREEN}Configuration:${NC}"
-echo "  Config:   /etc/ada_pi/config.json"
-echo "  Data:     /opt/ada-pi/data/"
+echo "  Device ID: $DEVICE_NAME"
+echo "  Config:    /etc/ada_pi/config.json"
+echo "  Data:      /opt/ada-pi/data/"
 echo ""
 echo -e "${YELLOW}IMPORTANT:${NC}"
 echo "  1. Default password is 'changeme' - CHANGE IT NOW!"
 echo "  2. Login via: http://${LOCAL_IP}:8000"
 echo "  3. Use your www.adasystems.uk credentials to login"
 echo ""
-
-if [ "$VPN_CHOICE" == "1" ]; then
-    echo -e "${YELLOW}Next Steps (Tailscale):${NC}"
-    echo "  sudo tailscale up"
-    echo "  sudo tailscale funnel 8000"
-    echo "  sudo tailscale funnel 9000"
-    echo ""
-fi
-
-if [ "$VPN_CHOICE" == "2" ]; then
-    echo -e "${YELLOW}Next Steps (OpenVPN):${NC}"
-    echo "  1. Copy your .ovpn file to /etc/openvpn/client/ada-pi.conf"
-    echo "  2. sudo systemctl start openvpn-client@ada-pi"
-    echo ""
-fi
-
 echo "=============================================="
 echo -e "${GREEN}Installation successful! 🎉${NC}"
 echo "=============================================="
