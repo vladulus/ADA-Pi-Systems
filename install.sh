@@ -62,10 +62,21 @@ read -r -p "Device name (Pi name in ADA dashboard) [default: $DEFAULT_DEVICE_NAM
 DEVICE_NAME=${DEVICE_NAME:-$DEFAULT_DEVICE_NAME}
 echo ""
 
+# JWT Secret for cloud authentication
+echo -e "${YELLOW}JWT Secret is required for secure communication with ADA Systems cloud.${NC}"
+echo -e "${YELLOW}Get this from your Laravel .env file (JWT_SECRET or ADA_PI_JWT_SECRET).${NC}"
+read -r -p "JWT Secret: " JWT_SECRET
+if [ -z "$JWT_SECRET" ]; then
+    echo -e "${RED}ERROR: JWT Secret is required for cloud authentication.${NC}"
+    exit 1
+fi
+echo ""
+
 echo -e "${GREEN}Configuration:${NC}"
 echo "  Display Mode: $([ "$MODE" == "1" ] && echo "Headless" || echo "Kiosk")"
 echo "  ADA API URL:  $ADA_API_BASE_URL"
 echo "  Device name:  $DEVICE_NAME"
+echo "  JWT Secret:   ${JWT_SECRET:0:10}..."
 echo ""
 read -p "Press Enter to continue or Ctrl+C to abort..."
 echo ""
@@ -186,6 +197,7 @@ LOCAL_IP=$(hostname -I | awk '{print $1}')
 cat > /etc/ada_pi/config.json <<CONFIG
 {
     "device_id": "$DEVICE_NAME",
+    "jwt_secret": "$JWT_SECRET",
     "api_url": "http://${LOCAL_IP}:8000",
     "ws_url": "ws://${LOCAL_IP}:9000",
     "auth": {
@@ -193,7 +205,7 @@ cat > /etc/ada_pi/config.json <<CONFIG
         "password": "changeme"
     },
     "cloud": {
-        "upload_url": "https://www.adasystems.uk/api/telemetry/upload",
+        "upload_url": "https://www.adasystems.uk/api/ada-pi/device/status",
         "logs_url": "https://www.adasystems.uk/api/logs/upload"
     },
     "gps": {
