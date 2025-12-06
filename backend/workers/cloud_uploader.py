@@ -41,10 +41,13 @@ class CloudUploader:
         cfg = load_config()
 
         self.device_id = cfg.get("device_id", "ADA-PI-UNKNOWN")
-        self.cloud_url = cfg.get("upload_url_cloud", "").strip()
-        self.logs_url = cfg.get("upload_url_logs", "").strip()
+        
+        # Cloud URLs are nested under "cloud" key
+        cloud_cfg = cfg.get("cloud", {})
+        self.cloud_url = cloud_cfg.get("upload_url", "").strip()
+        self.logs_url = cloud_cfg.get("logs_url", "").strip()
 
-        logger.log("INFO", "CloudUploader: configuration loaded & cached")
+        logger.log("INFO", f"CloudUploader: config loaded - device={self.device_id}, url={self.cloud_url}")
 
     def _reload_config(self, _=None):
         """Reload config when frontend/API updates it."""
