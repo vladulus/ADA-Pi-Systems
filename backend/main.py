@@ -90,8 +90,8 @@ class BackendEngine:
         self.workers = [
             UPSWorker(self.modules["ups"]),
             NetworkWorker(self.modules["network"]),
-            ModemWorker(self.modules["modem"], self.config),
-            GPSWorker(self.modules["gps"]),
+            ModemWorker(self.modules["modem"], self.config, gps_module=self.modules["gps"]),
+            # GPSWorker disabled - GPS in ModemWorker
             BluetoothWorker(self.modules["bluetooth"]),
             LogsWorker(self.modules["logs"]),
             TachoWorker(self.modules["tacho"], self.modules["gps"]),

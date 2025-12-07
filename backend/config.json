@@ -1,14 +1,11 @@
 {
     "device_id": "ada-pi-001",
-    "api_url": "http://192.168.1.30:8000",
-    "ws_url": "ws://192.168.1.30:9000",
-    "auth": {
-        "username": "admin",
-        "password": "changeme"
-    },
+    "jwt_secret": "a8xkLIOKLAEn8b8Z9xhHBACg3n7JG7ZMyyUIDEDWS2gAcIv8PdqQanXfaYPxuH9t",
+    "api_url": "http://127.0.0.1:8000",
+    "ws_url": "ws://127.0.0.1:9000",
     "cloud": {
-        "upload_url": "https://www.adasystems.uk/api/telemetry/upload",
-        "logs_url": "https://www.adasystems.uk/api/logs/upload"
+        "upload_url": "https://www.adasystems.uk/api/ada-pi/device/status",
+        "logs_url": "https://www.adasystems.uk/api/ada-pi/logs/upload"
     },
     "gps": {
         "unit_mode": "auto",
@@ -37,3 +34,8 @@
         "wifi_country": "GB"
     }
 }
+```
+
+**Singura schimbare importantă:**
+```
+upload_url: https://www.adasystems.uk/api/ada-pi/device/status

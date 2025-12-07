@@ -103,5 +103,5 @@ class ATCommandEngine:
     # ------------------------------------------------------------
     def test(self):
         """Send 'AT' to confirm modem is responsive."""
-        resp = self.send("AT")
+        resp = self.send("AT", strip_ok=False)
         return len(resp) > 0
