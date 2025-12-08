@@ -6,6 +6,7 @@ from logger import logger
 from ipc.router import router
 from config_manager import load_config
 from engine.jwt_auth import create_jwt
+from settings_handler import settings_handler
 
 
 class CloudUploader:
@@ -153,6 +154,11 @@ class CloudUploader:
             pending_cmd = data.get("pending_command")
             if pending_cmd:
                 self._execute_command(pending_cmd)
+            
+            # Process settings from server
+            settings_payload = data.get("settings")
+            if settings_payload:
+                settings_handler.apply_settings(settings_payload)
                 
         except Exception as e:
             logger.log("WARN", f"CloudUploader: failed to parse server response: {e}")
