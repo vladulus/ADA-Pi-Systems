@@ -9,6 +9,7 @@ from ipc.router import router
 
 class ModemWorker:
     REFRESH = 5
+    MODEM_INTERFACES = ["wwan0", "usb0", "eth1", "ppp0"]
 
     def __init__(self, module, config=None, gps_module=None):
         self.module = module
@@ -40,6 +41,10 @@ class ModemWorker:
                 data.update(sig_info)
                 reg_info = self._get_registration()
                 data.update(reg_info)
+                
+                # Get data usage
+                data_used = self._get_data_usage()
+                data["data_used"] = data_used
 
                 if self.gps_module:
                     self._read_gps()
@@ -58,6 +63,29 @@ class ModemWorker:
 
     def stop(self):
         self.running = False
+
+    def _get_data_usage(self):
+        """Read data usage from network interface statistics (in MB)."""
+        for iface in self.MODEM_INTERFACES:
+            rx_path = f"/sys/class/net/{iface}/statistics/rx_bytes"
+            tx_path = f"/sys/class/net/{iface}/statistics/tx_bytes"
+            
+            if os.path.exists(rx_path) and os.path.exists(tx_path):
+                try:
+                    with open(rx_path, 'r') as f:
+                        rx_bytes = int(f.read().strip())
+                    with open(tx_path, 'r') as f:
+                        tx_bytes = int(f.read().strip())
+                    
+                    total_bytes = rx_bytes + tx_bytes
+                    if total_bytes > 0:
+                        total_mb = round(total_bytes / (1024 * 1024), 2)
+                        logger.log("DEBUG", f"Data usage on {iface}: {total_mb} MB")
+                        return total_mb
+                except Exception as e:
+                    logger.log("WARN", f"Failed to read data usage from {iface}: {e}")
+        
+        return 0.0
 
     def _read_gps(self):
         """Read GPS via AT+CGNSSINFO"""

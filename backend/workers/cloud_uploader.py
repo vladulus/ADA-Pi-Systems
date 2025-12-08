@@ -11,9 +11,10 @@ from engine.jwt_auth import create_jwt
 class CloudUploader:
     """
     Cloud uploader with CONFIG CACHING.
-    
+
     Loads configuration ONCE at startup and only reloads when:
       - IPC event "config_changed" is received
+      - Server sends new upload_interval in response
     """
 
     INTERVAL = 15
@@ -41,7 +42,7 @@ class CloudUploader:
         cfg = load_config()
 
         self.device_id = cfg.get("device_id", "ADA-PI-UNKNOWN")
-        
+
         # Cloud URLs are nested under "cloud" key
         cloud_cfg = cfg.get("cloud", {})
         self.cloud_url = cloud_cfg.get("upload_url", "").strip()
@@ -110,6 +111,9 @@ class CloudUploader:
                 # accept all 2xx codes
                 if 200 <= resp.status_code < 300:
                     router.publish("cloud_upload", {"status": "ok"})
+                    
+                    # Process server response
+                    self._process_server_response(resp)
                     return
 
                 logger.log(
@@ -125,6 +129,48 @@ class CloudUploader:
                 )
 
             time.sleep(2)
+
+    # ------------------------------------------------------------
+    # PROCESS SERVER RESPONSE
+    # ------------------------------------------------------------
+
+    def _process_server_response(self, resp):
+        """Process commands and settings from server response."""
+        try:
+            data = resp.json()
+            
+            # Check for nested data structure
+            if "data" in data:
+                data = data["data"]
+            
+            # Update upload interval if provided
+            new_interval = data.get("upload_interval")
+            if new_interval and isinstance(new_interval, int) and new_interval != self.INTERVAL:
+                self.INTERVAL = new_interval
+                logger.log("INFO", f"CloudUploader: interval updated to {new_interval}s")
+            
+            # Process pending commands
+            pending_cmd = data.get("pending_command")
+            if pending_cmd:
+                self._execute_command(pending_cmd)
+                
+        except Exception as e:
+            logger.log("WARN", f"CloudUploader: failed to parse server response: {e}")
+
+    def _execute_command(self, command):
+        """Execute a command received from server."""
+        logger.log("INFO", f"CloudUploader: executing command '{command}'")
+        
+        if command == "read_dtc":
+            # Publish event for OBD worker to read DTCs
+            router.publish("obd_command", {"action": "read_dtc"})
+            
+        elif command == "clear_dtc":
+            # Publish event for OBD worker to clear DTCs
+            router.publish("obd_command", {"action": "clear_dtc"})
+            
+        else:
+            logger.log("WARN", f"CloudUploader: unknown command '{command}'")
 
     # ------------------------------------------------------------
     # LOG FILE UPLOAD

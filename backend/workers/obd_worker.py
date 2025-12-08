@@ -29,14 +29,36 @@ class OBDWorker:
         # API flag: /api/obd/clear
         self.request_clear = False
         
+        # Flag to force DTC read on next cycle
+        self.request_read_dtc = False
+
         # Build port scan list from config
         self._build_port_list()
+        
+        # Subscribe to IPC commands from cloud uploader
+        router.subscribe("obd_command", self._handle_command)
+
+    # ------------------------------------------------------------
+    def _handle_command(self, data):
+        """Handle commands from cloud uploader via IPC."""
+        if not isinstance(data, dict):
+            return
+            
+        action = data.get("action")
+        
+        if action == "clear_dtc":
+            logger.log("INFO", "OBDWorker: received clear_dtc command from server")
+            self.request_clear = True
+            
+        elif action == "read_dtc":
+            logger.log("INFO", "OBDWorker: received read_dtc command from server")
+            self.request_read_dtc = True
 
     # ------------------------------------------------------------
     def _build_port_list(self):
         """Build list of ports to scan based on config."""
         obd_config = self.config.get("obd", {})
-        
+
         # Check if specific port is configured
         config_port = obd_config.get("port")
         if config_port:
@@ -44,13 +66,13 @@ class OBDWorker:
             self.PORT_SCAN = [config_port]
             logger.log("INFO", f"OBD configured to use only: {config_port}")
             return
-        
+
         # Default: scan all USB/ACM ports
         all_ports = [
             *[f"/dev/ttyUSB{i}" for i in range(0, 10)],
             *[f"/dev/ttyACM{i}" for i in range(0, 10)]
         ]
-        
+
         # Exclude modem ports by default
         excluded = obd_config.get("excluded_ports", [
             "/dev/ttyUSB2",  # Modem AT port
@@ -58,7 +80,7 @@ class OBDWorker:
             "/dev/modem-at",
             "/dev/modem-gps"
         ])
-        
+
         # Filter out excluded ports
         self.PORT_SCAN = [p for p in all_ports if p not in excluded]
         logger.log("INFO", f"OBD will scan {len(self.PORT_SCAN)} ports (excluding modem)")
@@ -78,6 +100,14 @@ class OBDWorker:
                 if self.request_clear:
                     self.clear_dtc()
                     self.request_clear = False
+
+                # Force DTC read when requested
+                if self.request_read_dtc:
+                    dtcs = self._read_dtcs()
+                    self.obd.update_fault_codes(dtcs)
+                    router.publish("obd_update", {"dtc": dtcs})
+                    logger.log("INFO", f"OBDWorker: DTCs read on demand: {dtcs}")
+                    self.request_read_dtc = False
 
                 # Read PID values
                 self._read_pids()
