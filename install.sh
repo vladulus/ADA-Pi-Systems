@@ -11,7 +11,7 @@ set -euo pipefail
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
+BLUE='\033[0;96m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
@@ -146,6 +146,11 @@ read -r -p "Device name [default: $DEFAULT_DEVICE_NAME]: " DEVICE_NAME
 DEVICE_NAME=${DEVICE_NAME:-$DEFAULT_DEVICE_NAME}
 echo ""
 
+# JWT Secret
+read -r -p "JWT Secret (from Laravel .env ADA_PI_JWT_SECRET): " JWT_SECRET
+JWT_SECRET=${JWT_SECRET:-""}
+echo ""
+
 # ============================================
 # MODEM / APN CONFIGURATION
 # ============================================
@@ -202,6 +207,7 @@ echo -e "  UPS:           ${GREEN}$UPS_NAME${NC}"
 echo -e "  Fan:           ${GREEN}$HAS_FAN${NC}"
 echo -e "  Display Mode:  ${GREEN}$([ "$MODE" == "1" ] && echo "Headless" || echo "Kiosk")${NC}"
 echo -e "  Device name:   ${GREEN}$DEVICE_NAME${NC}"
+echo -e "  JWT Secret:    ${GREEN}${JWT_SECRET:0:10}...${NC}"
 echo -e "  APN:           ${GREEN}${MODEM_APN:-"(not set)"}${NC}"
 if [ "$OBD_TYPE" == "1" ]; then
     echo -e "  OBD:           ${GREEN}Bluetooth ($OBD_BT_MAC)${NC}"
@@ -280,12 +286,12 @@ else
     echo -e "${YELLOW}⚠ raspi-config not found${NC}"
 fi
 
-# Add user to groups
-
 # Disable ModemManager (conflicts with AT commands)
 systemctl stop ModemManager 2>/dev/null || true
 systemctl disable ModemManager 2>/dev/null || true
 echo -e "${GREEN}✓ ModemManager disabled${NC}"
+
+# Add user to groups
 usermod -aG dialout,i2c,bluetooth,gpio "$INSTALL_USER" 2>/dev/null || true
 echo -e "${GREEN}✓ User added to hardware groups${NC}"
 echo ""
@@ -387,6 +393,7 @@ fi
 cat > /etc/ada_pi/config.json <<CONFIG
 {
     "device_id": "$DEVICE_NAME",
+    "jwt_secret": "$JWT_SECRET",
     "pi_type": "$PI_TYPE",
     "api_url": "http://${LOCAL_IP}:8000",
     "ws_url": "ws://${LOCAL_IP}:9000",
@@ -410,17 +417,23 @@ cat > /etc/ada_pi/config.json <<CONFIG
         "apn": "$MODEM_APN",
         "apn_username": "$MODEM_USER",
         "apn_password": "$MODEM_PASS",
-        "failover_enabled": true
+        "failover_enabled": true,
+        "network_mode": "auto",
+        "roaming": false
     },
     "gps": {
         "source": "modem",
-        "unit_mode": "auto"
+        "unit_mode": "auto",
+        "enabled": true,
+        "update_rate": 1
     },
     "obd": {
         "enabled": $OBD_ENABLED,
         "connection": "$OBD_CONNECTION",
         "bluetooth_mac": "$OBD_BT_MAC_CFG",
-        "usb_port": "$OBD_USB_PORT_CFG"
+        "usb_port": "$OBD_USB_PORT_CFG",
+        "protocol": "auto",
+        "poll_interval": 2
     },
     "tacho": {
         "enabled": false,
