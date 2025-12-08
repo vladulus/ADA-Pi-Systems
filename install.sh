@@ -281,6 +281,11 @@ else
 fi
 
 # Add user to groups
+
+# Disable ModemManager (conflicts with AT commands)
+systemctl stop ModemManager 2>/dev/null || true
+systemctl disable ModemManager 2>/dev/null || true
+echo -e "${GREEN}✓ ModemManager disabled${NC}"
 usermod -aG dialout,i2c,bluetooth,gpio "$INSTALL_USER" 2>/dev/null || true
 echo -e "${GREEN}✓ User added to hardware groups${NC}"
 echo ""
