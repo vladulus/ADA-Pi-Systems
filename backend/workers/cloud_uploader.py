@@ -6,6 +6,7 @@ from logger import logger
 from ipc.router import router
 from config_manager import load_config
 from engine.jwt_auth import create_jwt
+from settings_handler import settings_handler
 
 
 class CloudUploader:
@@ -42,13 +43,14 @@ class CloudUploader:
         cfg = load_config()
 
         self.device_id = cfg.get("device_id", "ADA-PI-UNKNOWN")
+        self.pi_type = cfg.get("pi_type", "unknown")
 
         # Cloud URLs are nested under "cloud" key
         cloud_cfg = cfg.get("cloud", {})
         self.cloud_url = cloud_cfg.get("upload_url", "").strip()
         self.logs_url = cloud_cfg.get("logs_url", "").strip()
 
-        logger.log("INFO", f"CloudUploader: config loaded - device={self.device_id}, url={self.cloud_url}")
+        logger.log("INFO", f"CloudUploader: config loaded - device={self.device_id}, pi={self.pi_type}, url={self.cloud_url}")
 
     def _reload_config(self, _=None):
         """Reload config when frontend/API updates it."""
@@ -153,6 +155,11 @@ class CloudUploader:
             pending_cmd = data.get("pending_command")
             if pending_cmd:
                 self._execute_command(pending_cmd)
+            
+            # Process settings from server
+            settings_payload = data.get("settings")
+            if settings_payload:
+                settings_handler.apply_settings(settings_payload)
                 
         except Exception as e:
             logger.log("WARN", f"CloudUploader: failed to parse server response: {e}")
@@ -253,6 +260,7 @@ class CloudUploader:
         return {
             "timestamp": int(time.time()),
             "device_id": self.device_id,
+            "pi_type": self.pi_type,
             "gps": self.modules["gps"].read_status(),
             "obd": self.modules["obd"].read_status(),
             "tacho": self.modules["tacho"].read_status(),
@@ -273,8 +281,22 @@ class CloudUploader:
         return create_jwt(payload, expire_minutes=15)
 
     def _online(self):
+        """Check if we have internet via WiFi, Ethernet, or Modem."""
         try:
+            # Check network module first (WiFi/Ethernet)
+            network = self.modules["network"].read_status()
+            active = network.get("active", "none")
+            
+            if active == "wifi" and network.get("wifi", {}).get("connected"):
+                return True
+            if active == "ethernet" and network.get("ethernet", {}).get("connected"):
+                return True
+            
+            # Fallback to modem
             modem = self.modules["modem"].read_status()
-            return bool(modem.get("connected", False))
+            if modem.get("connected", False):
+                return True
+            
+            return False
         except:
             return False

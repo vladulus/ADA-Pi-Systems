@@ -18,6 +18,28 @@ class ModemWorker:
         self.engine = ATCommandEngine()
         self.gps_module = gps_module
         self._gps_enabled = False
+        self._data_connected = False
+        
+        # Subscribe to failover requests
+        router.subscribe("modem_connect_request", self._handle_connect_request)
+        router.subscribe("modem_disconnect_request", self._handle_disconnect_request)
+        router.subscribe("modem_config_changed", self._reload_config)
+    
+    def _reload_config(self, data=None):
+        """Reload modem config from config_manager."""
+        from config_manager import load_config
+        self.config = load_config()
+        logger.log("INFO", "ModemWorker: config reloaded")
+    
+    def _handle_connect_request(self, data=None):
+        """Handle request to establish data connection."""
+        logger.log("INFO", "ModemWorker: received connect request")
+        self.connect_data()
+    
+    def _handle_disconnect_request(self, data=None):
+        """Handle request to disconnect data."""
+        logger.log("INFO", "ModemWorker: received disconnect request")
+        self.disconnect_data()
 
     def start(self):
         logger.log("INFO", "ModemWorker started")
@@ -340,3 +362,142 @@ class ModemWorker:
                         except:
                             pass
         return {"rssi": rssi, "rsrp": rsrp, "rsrq": rsrq, "sinr": sinr}
+
+    # ----------------------------------------------------------------
+    # DATA CONNECTION (FAILOVER)
+    # ----------------------------------------------------------------
+
+    def connect_data(self):
+        """
+        Establish mobile data connection using AT commands.
+        Works with SIMCom SIM7600 and similar modems.
+        """
+        if self._data_connected:
+            logger.log("INFO", "ModemWorker: data already connected")
+            return True
+
+        modem_cfg = self.config.get("modem", {})
+        apn = modem_cfg.get("apn", "")
+        username = modem_cfg.get("apn_username", "")
+        password = modem_cfg.get("apn_password", "")
+
+        if not apn:
+            logger.log("ERROR", "ModemWorker: no APN configured, cannot connect")
+            return False
+
+        logger.log("INFO", f"ModemWorker: connecting data with APN={apn}")
+
+        try:
+            # Check if modem is ready
+            if not self._ensure_modem_connected():
+                logger.log("ERROR", "ModemWorker: modem not available")
+                return False
+
+            # Check registration status
+            resp = self.engine.send("AT+CREG?")
+            registered = False
+            for line in resp:
+                if "+CREG:" in line and ("1" in line or "5" in line):
+                    registered = True
+                    break
+            
+            if not registered:
+                logger.log("WARN", "ModemWorker: not registered to network")
+                return False
+
+            # Configure APN (PDP context 1)
+            if username and password:
+                self.engine.send(f'AT+CGDCONT=1,"IP","{apn}"')
+                self.engine.send(f'AT+CGAUTH=1,1,"{username}","{password}"')
+            else:
+                self.engine.send(f'AT+CGDCONT=1,"IP","{apn}"')
+
+            time.sleep(1)
+
+            # SIMCom specific: Use NETOPEN for data connection
+            if hasattr(self, 'brand') and self.brand == "SIMCom":
+                # Close any existing connection first
+                self.engine.send("AT+NETCLOSE")
+                time.sleep(1)
+                
+                # Open network connection
+                resp = self.engine.send("AT+NETOPEN")
+                time.sleep(3)
+                
+                # Check if NETOPEN succeeded
+                resp = self.engine.send("AT+NETOPEN?")
+                for line in resp:
+                    if "+NETOPEN: 1" in line:
+                        logger.log("INFO", "ModemWorker: NETOPEN successful")
+                        break
+            else:
+                # Generic: Activate PDP context
+                self.engine.send("AT+CGACT=1,1")
+                time.sleep(2)
+
+            # Wait for interface to come up
+            time.sleep(3)
+            
+            # Check if we got an IP
+            if self._check_data_interface():
+                self._data_connected = True
+                self.module.update({"data_connected": True})
+                router.publish("modem_data_connected", {"connected": True})
+                logger.log("INFO", "ModemWorker: data connection established")
+                return True
+            else:
+                logger.log("WARN", "ModemWorker: no IP obtained after connect")
+                return False
+
+        except Exception as e:
+            logger.log("ERROR", f"ModemWorker: connect_data failed: {e}")
+            return False
+
+    def disconnect_data(self):
+        """Disconnect mobile data connection."""
+        logger.log("INFO", "ModemWorker: disconnecting data")
+
+        try:
+            if hasattr(self, 'brand') and self.brand == "SIMCom":
+                self.engine.send("AT+NETCLOSE")
+            else:
+                self.engine.send("AT+CGACT=0,1")
+
+            time.sleep(2)
+            self._data_connected = False
+            self.module.update({"data_connected": False})
+            router.publish("modem_data_connected", {"connected": False})
+            logger.log("INFO", "ModemWorker: data disconnected")
+            return True
+
+        except Exception as e:
+            logger.log("ERROR", f"ModemWorker: disconnect_data failed: {e}")
+            return False
+
+    def _check_data_interface(self):
+        """Check if modem data interface has an IP address."""
+        import subprocess
+        
+        for iface in self.MODEM_INTERFACES:
+            try:
+                result = subprocess.run(
+                    ["ip", "addr", "show", iface],
+                    capture_output=True, text=True, timeout=5
+                )
+                
+                if result.returncode == 0 and "inet " in result.stdout:
+                    # Extract IP
+                    for line in result.stdout.split("\n"):
+                        if "inet " in line and "127." not in line:
+                            ip = line.strip().split()[1].split("/")[0]
+                            logger.log("INFO", f"ModemWorker: data interface {iface} has IP {ip}")
+                            self.module.update({"data_ip": ip, "data_interface": iface})
+                            return True
+            except:
+                continue
+        
+        return False
+
+    def is_data_connected(self):
+        """Check if data connection is active."""
+        return self._data_connected and self._check_data_interface()

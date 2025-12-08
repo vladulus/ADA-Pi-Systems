@@ -11,7 +11,9 @@ class NetworkModule:
         "active": "wifi" | "ethernet" | "modem" | "none",
         "wifi": {...},
         "ethernet": {...},
+        "modem_data": bool,
         "ip": "x.x.x.x",
+        "failover_active": bool,
         "updated": <timestamp>
     }
     """
@@ -31,7 +33,9 @@ class NetworkModule:
                 "connected": False,
                 "ip": None,
             },
+            "modem_data": False,
             "ip": None,
+            "failover_active": False,
             "updated": time.time(),
         }
 
@@ -55,6 +59,14 @@ class NetworkModule:
         # primary IP
         if "ip" in new_data:
             self.state["ip"] = new_data["ip"]
+
+        # modem data connection
+        if "modem_data" in new_data:
+            self.state["modem_data"] = new_data["modem_data"]
+
+        # failover status
+        if "failover_active" in new_data:
+            self.state["failover_active"] = new_data["failover_active"]
 
         # timestamp
         self.state["updated"] = time.time()

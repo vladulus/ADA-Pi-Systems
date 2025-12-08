@@ -58,11 +58,49 @@ class OBDWorker:
     def _build_port_list(self):
         """Build list of ports to scan based on config."""
         obd_config = self.config.get("obd", {})
+        
+        # Check if OBD is disabled
+        if not obd_config.get("enabled", True):
+            self.PORT_SCAN = []
+            logger.log("INFO", "OBD is disabled in config")
+            return
 
-        # Check if specific port is configured
+        connection_type = obd_config.get("connection", "bluetooth")
+        
+        # USB connection - use specific port or scan
+        if connection_type == "usb":
+            usb_port = obd_config.get("usb_port", "")
+            if usb_port:
+                self.PORT_SCAN = [usb_port]
+                logger.log("INFO", f"OBD configured for USB: {usb_port}")
+            else:
+                # Scan all USB ports except modem
+                all_ports = [f"/dev/ttyUSB{i}" for i in range(0, 10)]
+                excluded = ["/dev/ttyUSB2", "/dev/ttyUSB3"]  # Modem ports
+                self.PORT_SCAN = [p for p in all_ports if p not in excluded]
+                logger.log("INFO", f"OBD USB mode: scanning {len(self.PORT_SCAN)} ports")
+            return
+        
+        # Bluetooth connection - bind rfcomm
+        if connection_type == "bluetooth":
+            bt_mac = obd_config.get("bluetooth_mac", "")
+            if bt_mac:
+                # Try to bind rfcomm0
+                if self._bind_bluetooth(bt_mac):
+                    self.PORT_SCAN = ["/dev/rfcomm0"]
+                    logger.log("INFO", f"OBD Bluetooth bound to {bt_mac}")
+                else:
+                    self.PORT_SCAN = []
+                    logger.log("WARN", f"OBD Bluetooth bind failed for {bt_mac}")
+            else:
+                # No MAC configured, try rfcomm0 anyway
+                self.PORT_SCAN = ["/dev/rfcomm0"]
+                logger.log("INFO", "OBD Bluetooth mode: using /dev/rfcomm0")
+            return
+
+        # Legacy: Check if specific port is configured
         config_port = obd_config.get("port")
         if config_port:
-            # Use only the configured port
             self.PORT_SCAN = [config_port]
             logger.log("INFO", f"OBD configured to use only: {config_port}")
             return
@@ -84,6 +122,32 @@ class OBDWorker:
         # Filter out excluded ports
         self.PORT_SCAN = [p for p in all_ports if p not in excluded]
         logger.log("INFO", f"OBD will scan {len(self.PORT_SCAN)} ports (excluding modem)")
+
+    def _bind_bluetooth(self, mac_address):
+        """Bind Bluetooth ELM327 to rfcomm0."""
+        import subprocess
+        try:
+            # Release any existing binding
+            subprocess.run(["rfcomm", "release", "0"], 
+                          capture_output=True, timeout=5)
+            time.sleep(0.5)
+            
+            # Bind to new MAC
+            result = subprocess.run(
+                ["rfcomm", "bind", "0", mac_address],
+                capture_output=True, timeout=10
+            )
+            
+            if result.returncode == 0:
+                time.sleep(1)  # Wait for device to appear
+                return os.path.exists("/dev/rfcomm0")
+            
+            logger.log("WARN", f"rfcomm bind failed: {result.stderr.decode()}")
+            return False
+            
+        except Exception as e:
+            logger.log("ERROR", f"Bluetooth bind error: {e}")
+            return False
 
     # ------------------------------------------------------------
     def start(self):

@@ -89,14 +89,14 @@ class BackendEngine:
         # --------------------------------------------------------
         self.workers = [
             UPSWorker(self.modules["ups"]),
-            NetworkWorker(self.modules["network"]),
+            NetworkWorker(self.modules["network"], modem_module=self.modules["modem"]),
             ModemWorker(self.modules["modem"], self.config, gps_module=self.modules["gps"]),
             # GPSWorker disabled - GPS in ModemWorker
             BluetoothWorker(self.modules["bluetooth"]),
             LogsWorker(self.modules["logs"]),
             TachoWorker(self.modules["tacho"], self.modules["gps"]),
             FanWorker(self.modules["fan"]),
-            OBDWorker(self.modules["obd"]),
+            OBDWorker(self.modules["obd"], self.config),
             SystemInfoWorker(self.modules["system"]),
             TachoUploader(self.modules["tacho"], self.storage),
             CloudUploader(self.modules, self.storage),

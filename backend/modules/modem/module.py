@@ -23,8 +23,12 @@ class ModemModule:
         self.band = None
         # Last known AT port
         self.at_port = None
-        # Connection state
+        # Connection state (AT commands responding)
         self.connected = False
+        # Data connection state (internet via modem)
+        self.data_connected = False
+        self.data_ip = None
+        self.data_interface = None
         # Data usage in MB
         self.data_used = 0.0
         # Error message if something fails
@@ -58,6 +62,9 @@ class ModemModule:
             "band": self.band,
             "at_port": self.at_port,
             "connected": self.connected,
+            "data_connected": self.data_connected,
+            "data_ip": self.data_ip,
+            "data_interface": self.data_interface,
             "data_used": self.data_used,
             "error": self.error,
             "timestamp": self.timestamp
