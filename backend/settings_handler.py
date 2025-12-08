@@ -170,9 +170,9 @@ class SettingsHandler:
         if "modem" not in cfg:
             cfg["modem"] = {}
         
-        cfg["modem"]["apn"] = modem.get("apn", "")
-        cfg["modem"]["apn_username"] = modem.get("username", modem.get("apn_username", ""))
-        cfg["modem"]["apn_password"] = modem.get("password", modem.get("apn_password", ""))
+        cfg["modem"]["apn"] = modem.get("apn") or cfg["modem"].get("apn", "")
+        cfg["modem"]["apn_username"] = modem.get("username") or modem.get("apn_username") or cfg["modem"].get("apn_username", "")
+        cfg["modem"]["apn_password"] = modem.get("password") or modem.get("apn_password") or cfg["modem"].get("apn_password", "")
         cfg["modem"]["network_mode"] = modem.get("network_mode", "auto")
         cfg["modem"]["roaming"] = modem.get("roaming", False)
         cfg["modem"]["failover_enabled"] = modem.get("failover_enabled", True)

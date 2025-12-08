@@ -269,12 +269,37 @@ class CloudUploader:
             "ups": self.modules["ups"].read_status(),
             "fan": self.modules["fan"].read_status(),
             "bluetooth": self.modules["bluetooth"].read_status(),
-            "system": self.modules["system"].read_status()
+            "system": self.modules["system"].read_status(),
+            "config": self._get_config_snapshot()
         }
 
     # ------------------------------------------------------------
     # HELPERS
     # ------------------------------------------------------------
+
+    def _get_config_snapshot(self):
+        """Return config settings to sync with cloud."""
+        from config_manager import load_config
+        cfg = load_config()
+        return {
+            "modem": {
+                "apn": cfg.get("modem", {}).get("apn", ""),
+                "apn_username": cfg.get("modem", {}).get("apn_username", ""),
+                "apn_password": cfg.get("modem", {}).get("apn_password", ""),
+                "failover_enabled": cfg.get("modem", {}).get("failover_enabled", True)
+            },
+            "obd": {
+                "enabled": cfg.get("obd", {}).get("enabled", False),
+                "connection": cfg.get("obd", {}).get("connection", "none"),
+                "bluetooth_mac": cfg.get("obd", {}).get("bluetooth_mac", ""),
+                "usb_port": cfg.get("obd", {}).get("usb_port", "")
+            },
+            "ups": {
+                "type": cfg.get("ups", {}).get("type", "none"),
+                "shutdown_pct": cfg.get("ups", {}).get("shutdown_pct", 10)
+            }
+        }
+
 
     def _get_jwt(self):
         payload = {"device": self.device_id}
