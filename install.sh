@@ -291,16 +291,18 @@ echo ""
 if [ "$UPS_TYPE" == "wittypi" ]; then
     echo -e "${BLUE}[4/12] Installing WittyPi software...${NC}"
     
+    # Save current directory
+    INSTALL_DIR=$(pwd)
+    
     cd /tmp
     wget -q https://www.uugear.com/repo/WittyPi4/install.sh -O wittypi_install.sh
-    
-    # Make it executable and run
     chmod +x wittypi_install.sh
+    bash wittypi_install.sh
     
-    # Run as the install user
-    sudo -u "$INSTALL_USER" bash wittypi_install.sh
+    # Return to install directory
+    cd "$INSTALL_DIR"
     
-    rm -f wittypi_install.sh
+    rm -f /tmp/wittypi_install.sh
     echo -e "${GREEN}✓ WittyPi software installed${NC}"
 else
     echo -e "${BLUE}[4/12] Skipping WittyPi (not detected)${NC}"
