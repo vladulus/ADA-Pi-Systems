@@ -43,8 +43,48 @@ class NetworkWorker:
         # Subscribe to modem data connection events
         router.subscribe("modem_data_connected", self._on_modem_data_changed)
         router.subscribe("config_changed", self._reload_config)
+        router.subscribe("wifi_config_changed", self._on_wifi_config_changed)
 
         logger.log("INFO", "NetworkWorker initialized (DBus mode + failover)")
+
+    def _on_wifi_config_changed(self, config):
+        """Handle WiFi config updates from cloud."""
+        logger.log("INFO", f"NetworkWorker: WiFi config changed from cloud: {config}")
+        
+        try:
+            enabled = config.get("enabled", True)
+            ssid = config.get("ssid", "")
+            password = config.get("password", "")
+            
+            if not enabled:
+                # Disable WiFi radio
+                subprocess.run(["nmcli", "radio", "wifi", "off"], capture_output=True)
+                logger.log("INFO", "NetworkWorker: WiFi disabled")
+            else:
+                # Enable WiFi radio
+                subprocess.run(["nmcli", "radio", "wifi", "on"], capture_output=True)
+                logger.log("INFO", "NetworkWorker: WiFi enabled")
+                
+                # Connect to network if SSID provided
+                if ssid:
+                    time.sleep(2)  # Wait for radio to enable
+                    if password:
+                        result = subprocess.run(
+                            ["nmcli", "device", "wifi", "connect", ssid, "password", password],
+                            capture_output=True, text=True
+                        )
+                    else:
+                        result = subprocess.run(
+                            ["nmcli", "device", "wifi", "connect", ssid],
+                            capture_output=True, text=True
+                        )
+                    
+                    if result.returncode == 0:
+                        logger.log("INFO", f"NetworkWorker: Connected to WiFi '{ssid}'")
+                    else:
+                        logger.log("WARN", f"NetworkWorker: Failed to connect to '{ssid}': {result.stderr}")
+        except Exception as e:
+            logger.log("ERROR", f"NetworkWorker: WiFi config apply failed: {e}")
 
     def _load_failover_config(self):
         """Load failover configuration."""

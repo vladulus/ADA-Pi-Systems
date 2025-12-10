@@ -145,8 +145,7 @@ class SettingsHandler:
         cfg["wifi"]["dns"] = wifi.get("dns", "")
 
         # Notify network module to reconfigure WiFi
-        if wifi.get("ssid"):
-            router.publish("wifi_config_changed", wifi)
+        router.publish("wifi_config_changed", wifi)
 
     def _apply_bluetooth(self, cfg: dict, bt: dict):
         """Apply Bluetooth settings."""

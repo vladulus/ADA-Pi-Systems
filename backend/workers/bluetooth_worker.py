@@ -24,6 +24,19 @@ class BluetoothWorker:
         self.cmd_set_power = None       # True/False
         self.cmd_set_discoverable = None
 
+        # Listen for config changes from cloud
+        router.subscribe("bluetooth_config_changed", self._on_config_changed)
+
+    def _on_config_changed(self, config):
+        """Handle bluetooth config updates from cloud."""
+        logger.log("INFO", f"BluetoothWorker: config changed from cloud: {config}")
+        
+        if "enabled" in config:
+            self.cmd_set_power = config["enabled"]
+        
+        if "discoverable" in config:
+            self.cmd_set_discoverable = config["discoverable"]
+
     # ------------------------------------------------------------
     def start(self):
         logger.log("INFO", "BluetoothWorker started.")

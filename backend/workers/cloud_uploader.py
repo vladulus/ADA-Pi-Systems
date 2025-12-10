@@ -282,21 +282,56 @@ class CloudUploader:
         from config_manager import load_config
         cfg = load_config()
         return {
+            "wifi": {
+                "enabled": cfg.get("wifi", {}).get("enabled", False),
+                "ssid": cfg.get("wifi", {}).get("ssid", ""),
+                "password": cfg.get("wifi", {}).get("password", ""),
+                "dhcp": cfg.get("wifi", {}).get("dhcp", True),
+                "ip": cfg.get("wifi", {}).get("ip", ""),
+                "gateway": cfg.get("wifi", {}).get("gateway", ""),
+                "dns": cfg.get("wifi", {}).get("dns", "")
+            },
+            "bluetooth": {
+                "enabled": cfg.get("bluetooth", {}).get("enabled", True),
+                "discoverable": cfg.get("bluetooth", {}).get("discoverable", False),
+                "name": cfg.get("bluetooth", {}).get("name", "")
+            },
             "modem": {
                 "apn": cfg.get("modem", {}).get("apn", ""),
                 "apn_username": cfg.get("modem", {}).get("apn_username", ""),
                 "apn_password": cfg.get("modem", {}).get("apn_password", ""),
+                "network_mode": cfg.get("modem", {}).get("network_mode", "auto"),
+                "roaming": cfg.get("modem", {}).get("roaming", False),
                 "failover_enabled": cfg.get("modem", {}).get("failover_enabled", True)
+            },
+            "gps": {
+                "enabled": cfg.get("gps", {}).get("enabled", True),
+                "update_rate": cfg.get("gps", {}).get("update_rate", 1)
             },
             "obd": {
                 "enabled": cfg.get("obd", {}).get("enabled", False),
                 "connection": cfg.get("obd", {}).get("connection", "none"),
                 "bluetooth_mac": cfg.get("obd", {}).get("bluetooth_mac", ""),
-                "usb_port": cfg.get("obd", {}).get("usb_port", "")
+                "usb_port": cfg.get("obd", {}).get("usb_port", ""),
+                "protocol": cfg.get("obd", {}).get("protocol", "auto"),
+                "poll_interval": cfg.get("obd", {}).get("poll_interval", 2)
             },
             "ups": {
                 "type": cfg.get("ups", {}).get("type", "none"),
-                "shutdown_pct": cfg.get("ups", {}).get("shutdown_pct", 10)
+                "shutdown_pct": cfg.get("ups", {}).get("shutdown_pct", 15),
+                "auto_power_on": cfg.get("ups", {}).get("auto_power_on", True),
+                "shutdown_delay": cfg.get("ups", {}).get("shutdown_delay", 30)
+            },
+            "fan": {
+                "mode": cfg.get("fan", {}).get("mode", "auto"),
+                "threshold": cfg.get("fan", {}).get("threshold", 50),
+                "speed": cfg.get("fan", {}).get("speed", 100)
+            },
+            "system": {
+                "timezone": cfg.get("system", {}).get("timezone", "UTC"),
+                "hostname": cfg.get("system", {}).get("hostname", ""),
+                "auto_update": cfg.get("system", {}).get("auto_update", False),
+                "reboot_schedule": cfg.get("system", {}).get("reboot_schedule", "disabled")
             }
         }
 
